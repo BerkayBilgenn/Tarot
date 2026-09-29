@@ -1,257 +1,1648 @@
-const POSITIONS = [
-  { key: "carry", label: "Taşıdığın", lens: "Üzerinde tuttuğun" },
-  { key: "need", label: "İhtiyacın", lens: "Şu an sana iyi gelecek" },
-  { key: "step", label: "İlk adım", lens: "Bugün atılabilecek adım" },
-];
+'use strict';
 
-const INTENTS = [
-  "Güçlü görünüyorum. Biraz yoruldum.",
-  "Ne istediğimi yeni yeni duyuyorum.",
-  "Bir kararın eşiğindeyim.",
-  "Aynı yerde biraz fazla kaldım.",
-];
+const REFERENCE_WIDTH = 1586;
+const REFERENCE_HEIGHT = 992;
+const MOBILE_BREAKPOINT = 900;
+const NARROW_BREAKPOINT = 375;
+const CARD_RATIO = 1.6;
+const DECK_SIZE = 78;
+const SHUFFLE_HOLD_MS = 1500;
+const AUTO_SHUFFLE_MS = 1800;
+const FLIP_MS = 600;
 
-const HINTS = [
-  "Seni çağıran ilk kartı seç.",
-  "İki kartın daha var.",
-  "Son kartın için acele etme.",
-  "Üç kart da yerinde.",
-];
+const TAROT = window.TAROT_CARDS;
+const SPREADS = window.TAROT_SPREADS;
+const ENGINE = window.TAROT_READING;
 
-const DECK = [
-  {
-    id: "star",
-    name: "Yıldız",
-    line: "İyileşme uzakta değil. Küçük bir açıklık bile yön gösterir.",
-  },
-  {
-    id: "moon",
-    name: "Ay",
-    line: "Her şey net olmak zorunda değil. Belirsizlikte de kalabilirsin.",
-  },
-  {
-    id: "sun",
-    name: "Güneş",
-    line: "Sakladığın canlılık ortaya çıkmak istiyor. Biraz yer aç.",
-  },
-  {
-    id: "hermit",
-    name: "Ermiş",
-    line: "Cevap dışarıdaki seste değil, yavaşladığında duyulan tarafta.",
-  },
-  {
-    id: "strength",
-    name: "Güç",
-    line: "Zorlamak yerine yanında durmak da bir güç. Yumuşak kalabilirsin.",
-  },
-  {
-    id: "lovers",
-    name: "Aşıklar",
-    line: "Bir seçim var ve ikisi de bir şey istiyor. Kalbine yakın olanı ayır.",
-  },
-  {
-    id: "chariot",
-    name: "Savaş Arabası",
-    line: "Dağınık parçalar aynı yöne bakınca hareket başlar.",
-  },
-  {
-    id: "tower",
-    name: "Kule",
-    line: "Artık taşımayan bir şey yıkılabilir. Bu bir bitiş, bir ceza değil.",
-  },
-  {
-    id: "world",
-    name: "Dünya",
-    line: "Bir döngü kapanmak üzere. Bitirdiğin şeyi kutlamadan geçme.",
-  },
-  {
-    id: "justice",
-    name: "Adalet",
-    line: "Dürüst bir tartı yeter. Kendine karşı da aynı açıklıkta ol.",
-  },
-  {
-    id: "temperance",
-    name: "Denge",
-    line: "Aşırı uçların ortasında senin ritmin var. Acele etme.",
-  },
-  {
-    id: "magician",
-    name: "Büyücü",
-    line: "Elinde olanlar sandığından fazla. Bir tanesiyle başla.",
-  },
-];
-
-const slotsEl = document.querySelector("#slots");
-const fanEl = document.querySelector("#fan");
-const intentEl = document.querySelector("#intent-text");
-const countMain = document.querySelector("#count-main");
-const countHint = document.querySelector("#count-hint");
-const readBtn = document.querySelector("#read");
-const reading = document.querySelector("#reading");
-const readingGrid = document.querySelector("#reading-grid");
-
-const state = {
-  intent: 0,
-  slots: [DECK[0], DECK[1], null],
-  fan: DECK.slice(2),
+const MOODS = {
+  tired: ['Güçlü görünüyorum.', 'Biraz yoruldum.'],
+  uncertain: ['Bir yol ayrımındayım.', 'Kendimi duymak istiyorum.'],
+  hopeful: ['İçimde bir umut var.', 'Ona yer açmak istiyorum.'],
+  quiet: ['Biraz yavaşlamak istiyorum.', 'Kendime dönmek istiyorum.']
 };
 
-function filledCount() {
-  return state.slots.filter(Boolean).length;
-}
+const ICONS = {
+  today: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>',
+  love: '<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20Z"/>',
+  work: '<rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5V5.8c0-.7.6-1.3 1.3-1.3h3.4c.7 0 1.3.6 1.3 1.3v1.7M3.5 12.5h17M12 11.3v2.4"/>',
+  decision: '<path d="M12 21v-7.5M12 13.5 6 7.5M12 13.5l6-6M6 7.5V3.5m0 4H2M18 7.5V3.5m0 4h4"/>',
+  general: '<path d="M12 3c.6 4.3 1.9 6.9 9 9-7.1 2.1-8.4 4.7-9 9-.6-4.3-1.9-6.9-9-9 7.1-2.1 8.4-4.7 9-9Z"/>'
+};
 
-function renderIntent() {
-  intentEl.textContent = INTENTS[state.intent];
-}
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+const esc = (text) => String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-function renderStatus() {
-  const n = filledCount();
-  countMain.textContent = `${n} / 3 kart seçildi`;
-  countHint.textContent = HINTS[n];
-  readBtn.disabled = n < 3;
-}
+const stage = $('#app');
+const panel = $('.reading-panel');
+const body = $('#step-body');
+const titleEl = $('#spread-title');
+const instructionEl = $('#instruction');
+const progressEl = $('#progress');
+const backBtn = $('#back');
+const secondaryBtn = $('#secondary');
+const primaryBtn = $('#primary');
+const statusEl = $('#status');
+const announcer = $('#announcer');
+const dialogs = {
+  guide: $('#guide-dialog'),
+  spreads: $('#spreads-dialog'),
+  history: $('#history-dialog'),
+  settings: $('#settings-dialog'),
+  leave: $('#leave-dialog'),
+  card: $('#card-dialog')
+};
 
-function renderSlots() {
-  slotsEl.replaceChildren();
-  const origins = [322, 474, 626];
-  state.slots.forEach((card, index) => {
-    const position = POSITIONS[index];
-    const slot = document.createElement("div");
-    slot.className = "slot";
-    slot.style.left = `calc(${origins[index]} * 100cqw / 1024)`;
-    slot.style.top = `calc(238 * 100cqh / 682)`;
+// ---------- Depolama, ayarlar, servis ----------
 
-    const num = document.createElement("div");
-    num.className = "slot-num";
-    num.textContent = String(index + 1);
-
-    const label = document.createElement("div");
-    label.className = "slot-label";
-    label.textContent = position.label;
-
-    if (card) {
-      const placed = document.createElement("div");
-      placed.className = "placed";
-      const img = document.createElement("img");
-      img.className = "card-face";
-      img.src = "assets/card.png";
-      img.alt = "";
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "remove";
-      remove.setAttribute("aria-label", `${position.label} kartını geri koy`);
-      remove.textContent = "×";
-      remove.addEventListener("click", () => returnCard(index));
-      placed.append(img, remove);
-      slot.append(num, placed, label);
-    } else {
-      const empty = document.createElement("div");
-      empty.className = "empty-slot";
-      empty.setAttribute("aria-hidden", "true");
-      const plus = document.createElement("span");
-      plus.textContent = "+";
-      empty.append(plus);
-      slot.append(num, empty, label);
-    }
-
-    slotsEl.append(slot);
-  });
-}
-
-function renderFan() {
-  fanEl.replaceChildren();
-  const cards = state.fan;
-  const n = cards.length;
-  cards.forEach((card, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "fan-card";
-    const next = POSITIONS[filledCount()];
-    button.setAttribute(
-      "aria-label",
-      next ? `${next.label} için bir kart seç` : "Seçili kart"
-    );
-    const img = document.createElement("img");
-    img.src = "assets/card.png";
-    img.alt = "";
-    button.append(img);
-
-    const t = n === 1 ? 0 : (index / (n - 1)) * 2 - 1;
-    const rot = t * 15;
-    const x = t * 268;
-    const y = Math.abs(t) * 16;
-    button.style.left = `calc(${x} * 100cqw / 1024)`;
-    button.style.top = `calc(${y} * 100cqh / 682)`;
-    button.style.transform = `translate(-50%, 0) rotate(${rot}deg)`;
-    const center = (n - 1) / 2;
-    button.style.zIndex = String(80 - Math.round(Math.abs(index - center)));
-    button.addEventListener("click", () => takeCard(card.id));
-    fanEl.append(button);
-  });
-}
-
-function render() {
-  renderIntent();
-  renderStatus();
-  renderSlots();
-  renderFan();
-}
-
-function takeCard(id) {
-  const slotIndex = state.slots.findIndex((card) => card === null);
-  if (slotIndex === -1) return;
-  const index = state.fan.findIndex((card) => card.id === id);
-  if (index === -1) return;
-  const [card] = state.fan.splice(index, 1);
-  state.slots[slotIndex] = card;
-  render();
-}
-
-function returnCard(slotIndex) {
-  const card = state.slots[slotIndex];
-  if (!card) return;
-  state.slots[slotIndex] = null;
-  state.fan.push(card);
-  render();
-}
-
-function shuffle() {
-  const pool = [...state.slots.filter(Boolean), ...state.fan];
-  for (let i = pool.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+const storage = (() => {
+  try {
+    const probe = '__kd_probe';
+    localStorage.setItem(probe, '1');
+    localStorage.removeItem(probe);
+    return localStorage;
+  } catch (error) {
+    return ENGINE.memoryStorage();
   }
-  state.slots = [null, null, null];
-  state.fan = pool;
-  if (reading.open) reading.close();
-  render();
+})();
+
+const SETTINGS_KEY = 'kd.settings.v1';
+const settings = Object.assign(
+  { reversals: true, motion: null, sound: false, haptic: true, reminder: false, reminderTime: '09:00' },
+  (() => { try { return JSON.parse(storage.getItem(SETTINGS_KEY)) || {}; } catch (error) { return {}; } })()
+);
+const saveSettings = () => storage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+const systemReduced = matchMedia('(prefers-reduced-motion: reduce)');
+const reduced = () => (settings.motion ? settings.motion === 'reduced' : systemReduced.matches);
+const applyMotion = () => { document.documentElement.dataset.motion = reduced() ? 'reduced' : 'full'; };
+
+const service = ENGINE.createService({ cards: TAROT, spreads: SPREADS, storage, latency: 140 });
+
+// Soru, seçenek ve kişi adı metinleri hiçbir event'e girmez.
+const analytics = (window.__tarotEvents = []);
+function track(name, props = {}) {
+  const event = { name, props, at: new Date().toISOString() };
+  analytics.push(event);
+  document.dispatchEvent(new CustomEvent('tarot:analytics', { detail: event }));
 }
 
-function openReading() {
-  if (filledCount() < 3) return;
-  readingGrid.replaceChildren();
-  state.slots.forEach((card, index) => {
-    const position = POSITIONS[index];
-    const item = document.createElement("article");
-    item.className = "reading-item";
-    const eyebrow = document.createElement("h3");
-    eyebrow.textContent = position.label;
-    const title = document.createElement("strong");
-    title.textContent = card.name;
-    const text = document.createElement("p");
-    text.textContent = `${position.lens}: ${card.line}`;
-    item.append(eyebrow, title, text);
-    readingGrid.append(item);
+// ---------- Haptic ve ses ----------
+
+function haptic(ms) {
+  if (settings.haptic && navigator.vibrate) navigator.vibrate(ms);
+}
+
+const sfx = (() => {
+  let ctx = null;
+  let riffleTimer = null;
+  const audio = () => {
+    if (!settings.sound) return null;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    ctx = ctx || new Ctx();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  };
+  function noise(duration, { from = 2400, to = from, q = 0.8, gain = 0.12 } = {}) {
+    const c = audio();
+    if (!c) return;
+    const length = Math.ceil(c.sampleRate * duration);
+    const buffer = c.createBuffer(1, length, c.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / length);
+    const src = c.createBufferSource();
+    const filter = c.createBiquadFilter();
+    const amp = c.createGain();
+    filter.type = 'bandpass';
+    filter.Q.value = q;
+    filter.frequency.setValueAtTime(from, c.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(to, c.currentTime + duration);
+    amp.gain.value = gain;
+    src.buffer = buffer;
+    src.connect(filter).connect(amp).connect(c.destination);
+    src.start();
+  }
+  return {
+    riffleStart() {
+      if (!settings.sound) return;
+      clearInterval(riffleTimer);
+      const tick = () => { for (let i = 0; i < 6; i++) setTimeout(() => noise(0.03, { from: 3200, gain: 0.08 }), i * 45); };
+      tick();
+      riffleTimer = setInterval(tick, 600);
+    },
+    riffleStop() { clearInterval(riffleTimer); riffleTimer = null; },
+    slide() { noise(0.18, { from: 1800, to: 900, gain: 0.1 }); },
+    whoosh() { noise(0.35, { from: 600, to: 2600, q: 0.6, gain: 0.08 }); }
+  };
+})();
+
+// ---------- Hareket yardımcıları ----------
+
+const springCache = new Map();
+const supportsLinear = window.CSS && CSS.supports('animation-timing-function', 'linear(0, 1)');
+
+// Kütle 1 kabul edilen yayı örnekleyip CSS linear() eğrisine çevirir.
+function spring(stiffness, damping) {
+  const key = `${stiffness}/${damping}`;
+  if (springCache.has(key)) return springCache.get(key);
+  const dt = 1 / 240;
+  let x = 0;
+  let v = 0;
+  let t = 0;
+  const points = [0];
+  while (t < 2) {
+    for (let i = 0; i < 4; i++) {
+      const a = stiffness * (1 - x) - damping * v;
+      v += a * dt;
+      x += v * dt;
+      t += dt;
+    }
+    points.push(Math.round(x * 10000) / 10000);
+    if (t > 0.15 && Math.abs(1 - x) < 0.002 && Math.abs(v) < 0.02) break;
+  }
+  points[points.length - 1] = 1;
+  const result = supportsLinear
+    ? { easing: `linear(${points.join(', ')})`, duration: Math.round(t * 1000) }
+    : { easing: 'cubic-bezier(.2,.9,.3,1.05)', duration: Math.round(t * 1000) };
+  springCache.set(key, result);
+  return result;
+}
+
+function animate(el, keyframes, options) {
+  if (!el || !el.animate) return Promise.resolve();
+  const animation = el.animate(keyframes, options);
+  return animation.finished.catch(() => {}).then(() => animation);
+}
+
+// ---------- Ölçek ve yerleşim ----------
+
+const isMobile = () => window.innerWidth <= MOBILE_BREAKPOINT;
+const isNarrow = () => window.innerWidth < NARROW_BREAKPOINT;
+const pageScale = () => (isMobile() ? 1 : Math.min(window.innerWidth / REFERENCE_WIDTH, window.innerHeight / REFERENCE_HEIGHT));
+
+// Transform scale sonrası bazı motorlar rect'i görsel, bazıları CSS pikselinde verir.
+function rectFactor() {
+  if (isMobile()) return 1;
+  const width = stage.getBoundingClientRect().width;
+  return width ? (REFERENCE_WIDTH * pageScale()) / width : 1;
+}
+
+function scaleRect(r, f) {
+  return f === 1 ? r : { left: r.left * f, top: r.top * f, width: r.width * f, height: r.height * f };
+}
+
+// Ekran pikseli: body'ye eklenen uçan kart ve diyalog geçişi için.
+function visualRect(el) {
+  return el.closest('.stage') ? scaleRect(el.getBoundingClientRect(), rectFactor()) : el.getBoundingClientRect();
+}
+
+// Sahnenin kendi CSS pikseli: sahne içindeki transform'lar için.
+function localRect(el) {
+  return scaleRect(el.getBoundingClientRect(), rectFactor() / pageScale());
+}
+
+const LABEL_HEIGHT = { preview: 30, pick: 20, reveal: 64, thumb: 0, share: 60 };
+const MAX_CARD = { preview: 92, pick: 74, reveal: 150, thumb: 22, share: 170 };
+
+function slotsFor(spread, narrow) {
+  const override = narrow ? SPREADS.NARROW_SLOTS[spread.id] : null;
+  return spread.positions.map((p) => {
+    const o = override && override[p.key];
+    return { position: p, key: p.key, x: o ? o.x : p.slot.x, y: o ? o.y : p.slot.y, rot: p.slot.rot };
   });
-  reading.showModal();
 }
 
-document.querySelector("#change-intent").addEventListener("click", () => {
-  state.intent = (state.intent + 1) % INTENTS.length;
-  renderIntent();
+// Slot birimini kapsayıcıya sığdırır: 1 birim = kart + boşluk.
+function geometry(spread, width, height, mode, narrow) {
+  const slots = slotsFor(spread, narrow);
+  const celtic = spread.id === 'celtic';
+  const labelH = mode === 'reveal' && celtic ? 44 : LABEL_HEIGHT[mode];
+  const cellRatio = celtic ? 1.42 : 1.36;
+  const gapRatio = mode === 'thumb' ? 0.1 : 0.14;
+  const xs = slots.map((s) => s.x);
+  const ys = slots.map((s) => s.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const spanX = Math.max(...xs) - minX;
+  const spanY = Math.max(...ys) - minY;
+  const byWidth = width / (spanX * cellRatio + 1);
+  const byHeight = (height - labelH * (spanY + 1)) / (spanY * (CARD_RATIO + gapRatio) + CARD_RATIO);
+  const cw = Math.max(8, Math.floor(Math.min(byWidth, byHeight, MAX_CARD[mode])));
+  const ch = Math.round(cw * CARD_RATIO);
+  const cellW = cw * cellRatio;
+  const cellH = ch + labelH + cw * gapRatio;
+  const contentW = spanX * cellW + cw;
+  const contentH = spanY * cellH + ch + labelH;
+  const ox = (width - contentW) / 2;
+  const oy = (height - contentH) / 2;
+  return {
+    cw, ch, labelH, cellW, spanY,
+    slots: slots.map((s) => ({ ...s, left: Math.round(ox + (s.x - minX) * cellW), top: Math.round(oy + (s.y - minY) * cellH) }))
+  };
+}
+
+function cardBackVars(w, h) {
+  return `--bx:${(w / 136).toFixed(4)};--by:${(h / 202).toFixed(4)}`;
+}
+
+// ---------- Durum ----------
+
+const STEP_NUMBER = { intent: 1, confirm: 2, question: 3, shuffle: 4, pick: 5, reveal: 6, reading: 8 };
+
+const state = {
+  step: 'intent',
+  intentId: null,
+  spreadId: null,
+  inputs: { question: '', optionA: '', optionB: '', personName: '' },
+  readingId: null,
+  reading: null,
+  readingPromise: null,
+  picks: [],
+  revealed: new Set(),
+  revealing: new Set(),
+  pickChain: Promise.resolve(),
+  interpretationPromise: null,
+  startedAt: 0,
+  viewOnly: false,
+  renderToken: 0,
+  busy: false
+};
+
+const currentSpread = () => SPREADS.getSpread(state.spreadId);
+
+function resetReading() {
+  state.readingId = null;
+  state.reading = null;
+  state.readingPromise = null;
+  state.picks = [];
+  state.revealed = new Set();
+  state.revealing = new Set();
+  state.pickChain = Promise.resolve();
+  state.interpretationPromise = null;
+  state.viewOnly = false;
+  state.busy = false;
+  state.finishing = false;
+}
+
+function resetInputs() {
+  state.inputs = { question: '', optionA: '', optionB: '', personName: '' };
+}
+
+function readingContext() {
+  return state.reading || { ...state.inputs };
+}
+
+function labelFor(position) {
+  return ENGINE.displayLabel(position, readingContext());
+}
+
+// ---------- Başlık, aksiyon satırı, duyurular ----------
+
+function setHeading(title, instruction, { reference = false } = {}) {
+  titleEl.textContent = title;
+  titleEl.classList.toggle('is-reference', reference);
+  instructionEl.textContent = instruction || '';
+}
+
+function setProgress(text) {
+  progressEl.hidden = !text;
+  progressEl.textContent = text || '';
+}
+
+function setActions({ back = false, secondary = null, primary = null, status = '' } = {}) {
+  backBtn.hidden = !back;
+  secondaryBtn.hidden = !secondary;
+  secondaryBtn.textContent = secondary ? secondary.label : '';
+  secondaryBtn.onclick = secondary ? secondary.onClick : null;
+  primaryBtn.hidden = !primary;
+  primaryBtn.disabled = Boolean(primary && primary.disabled);
+  primaryBtn.innerHTML = primary ? `${esc(primary.label)}${primary.arrow === false ? '' : ' <span aria-hidden="true">→</span>'}` : '';
+  primaryBtn.onclick = primary ? primary.onClick : null;
+  statusEl.textContent = status;
+  panel.classList.toggle('no-actions', !back && !secondary && !primary);
+}
+
+function announce(text) {
+  announcer.textContent = '';
+  requestAnimationFrame(() => { announcer.textContent = text; });
+}
+
+// ---------- Navigasyon ----------
+
+const RENDERERS = {};
+
+function go(step, options = {}) {
+  const from = state.step;
+  state.step = step;
+  stage.dataset.step = step;
+  state.renderToken++;
+  body.classList.remove('no-enter');
+  if (step !== 'intent') armHistory();
+  const result = RENDERERS[step](options, from);
+  if (options.focus !== false) requestAnimationFrame(() => titleEl.focus({ preventScroll: true }));
+  return result;
+}
+
+function armHistory() {
+  if (!history.state || history.state.kd !== 'app') history.pushState({ kd: 'app' }, '');
+}
+
+const inReading = () => state.step === 'shuffle' || state.step === 'pick' || state.step === 'reveal';
+
+function back() {
+  switch (state.step) {
+    case 'confirm': return go('intent');
+    case 'question': return go('confirm');
+    case 'shuffle':
+    case 'pick':
+    case 'reveal': return openLeaveDialog();
+    case 'reading': return go('intent');
+    default: return undefined;
+  }
+}
+
+window.addEventListener('popstate', () => {
+  if (Object.values(dialogs).some((d) => d.open)) {
+    Object.values(dialogs).forEach((d) => d.open && d.close());
+    armHistory();
+    return;
+  }
+  if (state.step === 'intent') return;
+  back();
+  if (state.step !== 'intent' || inReading()) armHistory();
 });
 
-document.querySelector("#shuffle").addEventListener("click", shuffle);
-readBtn.addEventListener("click", openReading);
+backBtn.addEventListener('click', back);
 
-render();
+function openLeaveDialog() {
+  const picked = state.picks.length > 0;
+  $('#leave-text').textContent = picked
+    ? 'Kart seçimi başladıktan sonra okuma geri alınamaz. Seçtiğin kartlar saklanır; ana ekrandaki "Yarım kalan okuman var" kartından kaldığın yerden devam edebilirsin.'
+    : 'Karıştırma sıfırlanır ve bu okuma kaydedilmez.';
+  dialogs.leave.returnValue = '';
+  dialogs.leave.showModal();
+}
+
+dialogs.leave.addEventListener('close', async () => {
+  if (dialogs.leave.returnValue !== 'leave') return;
+  if (!state.picks.length && state.readingPromise) {
+    const { readingId, existing } = await state.readingPromise.catch(() => ({}));
+    if (readingId && !existing) {
+      await service.abandon(readingId);
+      track('reading_abandoned', { spreadId: state.spreadId, lastStep: STEP_NUMBER[state.step] });
+    }
+  }
+  resetReading();
+  go('intent');
+});
+
+// ---------- 1 · Niyet ----------
+
+RENDERERS.intent = async () => {
+  const token = state.renderToken;
+  resetReading();
+  setHeading('Bugün ne öğrenmek istiyorsun?', 'Bir niyet seç; açılımı senin için hazırlayalım.');
+  setProgress('');
+  setActions();
+  body.innerHTML = intentMarkup(null, null);
+  const [draft, daily] = await Promise.all([service.draft(), service.dailyToday()]);
+  if (token !== state.renderToken) return;
+  if (draft || (daily && daily.status === 'complete')) {
+    body.classList.add('no-enter');
+    body.innerHTML = intentMarkup(draft, daily);
+  }
+};
+
+function intentMarkup(draft, daily) {
+  const banner = draft
+    ? `<div class="draft-banner" role="region" aria-label="Yarım kalan okuma">
+         <span><strong>Yarım kalan okuman var</strong> · ${esc(SPREADS.getSpread(draft.spreadId).name)}</span>
+         <button type="button" class="banner-link" data-action="resume" data-id="${esc(draft.id)}">Devam et <span aria-hidden="true">→</span></button>
+         <button type="button" class="banner-close" data-action="discard" data-id="${esc(draft.id)}" aria-label="Yarım okumayı kapat">×</button>
+       </div>`
+    : '';
+  const doneDaily = daily && daily.status === 'complete' ? daily : null;
+  const cards = SPREADS.INTENTS.map((intent, i) => {
+    const spread = SPREADS.getSpread(intent.spreadId);
+    const drawn = intent.id === 'today' && doneDaily ? TAROT.getCard(doneDaily.cards[0].cardId) : null;
+    const extra = drawn
+      ? `<span class="daily-thumb${doneDaily.cards[0].reversed ? ' is-reversed' : ''}"><img src="${esc(drawn.image)}" alt="" decoding="async"></span><span class="done-badge">Bugün çekildi</span>`
+      : '';
+    const label = drawn ? `${intent.title}: bugün çekildi, ${drawn.nameTr}. Kayıtlı yorumu aç.` : `${intent.title}: ${intent.sub}. ${SPREADS.chip(spread)}`;
+    return `<li style="--i:${i}"><button type="button" class="intent-card${drawn ? ' is-done' : ''}" data-intent="${intent.id}" aria-label="${esc(label)}">
+        <svg class="intent-icon" viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[intent.id]}</svg>
+        ${extra}
+        <span class="intent-title">${esc(intent.title)}</span>
+        <span class="intent-sub">${esc(intent.sub)}</span>
+        <span class="chip">${esc(SPREADS.chip(spread))}</span>
+      </button></li>`;
+  }).join('');
+  return `<div class="intent-step">${banner}<ul class="intent-grid" role="list">${cards}</ul>
+    <button type="button" class="text-button all-spreads" data-action="all-spreads">Tüm açılımları gör</button></div>`;
+}
+
+body.addEventListener('click', (event) => {
+  const target = event.target.closest('[data-intent], [data-action]');
+  if (!target || !body.contains(target)) return;
+  if (target.dataset.intent) return chooseIntent(target.dataset.intent);
+  const { action, id } = target.dataset;
+  if (action === 'resume') return service.get(id).then(resumeReading);
+  if (action === 'discard') {
+    return service.get(id).then((r) => service.abandon(id).then(() => {
+      track('reading_abandoned', { spreadId: r.spreadId, lastStep: r.status === 'revealing' ? STEP_NUMBER.reveal : STEP_NUMBER.pick });
+      target.closest('.draft-banner').remove();
+    }));
+  }
+  if (action === 'all-spreads') return openSpreads();
+  return undefined;
+});
+
+function chooseIntent(intentId) {
+  track('intent_selected', { intent: intentId });
+  const intent = SPREADS.INTENTS.find((i) => i.id === intentId);
+  resetInputs();
+  state.intentId = intentId;
+  state.startedAt = performance.now();
+  if (intentId === 'today') return openDaily();
+  state.spreadId = intent.spreadId;
+  return go('confirm');
+}
+
+async function openDaily() {
+  const daily = await service.dailyToday();
+  if (daily && daily.status === 'complete') return openSavedReading(daily);
+  if (daily && daily.cards.length) return resumeReading(daily);
+  state.intentId = 'today';
+  state.spreadId = 'daily';
+  resetInputs();
+  return go('shuffle');
+}
+
+// ---------- 2 · Açılım onayı ----------
+
+RENDERERS.confirm = () => {
+  const spread = currentSpread();
+  const general = state.intentId === 'general';
+  setHeading(spread.name, `${spread.cardCount} kart · yaklaşık ${spread.estMinutes} dakika`);
+  setProgress('');
+  setActions({
+    back: true,
+    secondary: { label: 'Başka açılım seç', onClick: openSpreads },
+    primary: {
+      label: 'Devam',
+      onClick: () => {
+        track('spread_confirmed', { spreadId: state.spreadId, depth: state.spreadId === 'celtic' ? 'detailed' : 'quick' });
+        go('question');
+      }
+    }
+  });
+  body.innerHTML = `<div class="confirm-step">
+      ${general ? `<div class="segmented depth-control" role="radiogroup" aria-label="Okuma derinliği">
+          <button type="button" role="radio" data-depth="three" aria-checked="${spread.id === 'three'}" tabindex="${spread.id === 'three' ? 0 : -1}">Hızlı · 3 kart</button>
+          <button type="button" role="radio" data-depth="celtic" aria-checked="${spread.id === 'celtic'}" tabindex="${spread.id === 'celtic' ? 0 : -1}">Detaylı · 10 kart</button>
+        </div>` : ''}
+      <div class="confirm-grid">
+        <div class="layout-stage preview-stage" id="layout" aria-hidden="true"></div>
+        <ol class="position-list" id="position-list" aria-label="Pozisyonlar"></ol>
+      </div>
+    </div>`;
+  renderPositionList(spread);
+  requestAnimationFrame(() => renderLayout($('#layout'), spread, 'preview'));
+  const control = $('.depth-control', body);
+  if (control) {
+    control.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-depth]');
+      if (button) setDepth(button.dataset.depth);
+    });
+    control.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+      event.preventDefault();
+      setDepth(state.spreadId === 'three' ? 'celtic' : 'three');
+      $(`[data-depth="${state.spreadId}"]`, control).focus();
+    });
+  }
+};
+
+function renderPositionList(spread) {
+  $('#position-list').innerHTML = spread.positions.map((p) => `<li><span class="position-index">${p.index}</span><span><strong>${esc(labelFor(p))}</strong><small>${esc(ENGINE.displayPrompt(p, readingContext()))}</small></span></li>`).join('');
+}
+
+function setDepth(spreadId) {
+  if (spreadId === state.spreadId) return;
+  state.spreadId = spreadId;
+  const spread = currentSpread();
+  $$('[data-depth]').forEach((b) => {
+    const on = b.dataset.depth === spreadId;
+    b.setAttribute('aria-checked', String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
+  setHeading(spread.name, `${spread.cardCount} kart · yaklaşık ${spread.estMinutes} dakika`);
+  renderPositionList(spread);
+  morphLayout($('#layout'), spread, 'preview');
+}
+
+// ---------- 3 · Soru ----------
+
+RENDERERS.question = () => {
+  const spread = currentSpread();
+  const decision = spread.inputs.options === 'required';
+  const L = SPREADS.LIMITS;
+  const counter = (id, max) => `<span class="counter" id="${id}-count" aria-live="off">${(state.inputs[id] || '').length} / ${max}</span>`;
+  setHeading('Sorunu yaz', decision ? 'A ve B seçenekleri zorunlu' : 'İsteğe bağlı');
+  setProgress('');
+  body.innerHTML = `<form class="question-step" id="question-form" novalidate>
+      ${decision ? `<div class="option-row">
+          <label class="field"><span>A seçeneği</span><input id="optionA" maxlength="${L.option}" required autocomplete="off" value="${esc(state.inputs.optionA)}" placeholder="İstanbul'da kal">${counter('optionA', L.option)}</label>
+          <label class="field"><span>B seçeneği</span><input id="optionB" maxlength="${L.option}" required autocomplete="off" value="${esc(state.inputs.optionB)}" placeholder="Berlin'e taşın">${counter('optionB', L.option)}</label>
+        </div>` : ''}
+      <label class="field"><span>${decision ? 'Biraz bağlam ekle' : 'Sorun'}</span>
+        <textarea id="question" maxlength="${L.question}" rows="${decision ? 2 : 3}" placeholder="${esc(SPREADS.PLACEHOLDERS[spread.id] || '')}">${esc(state.inputs.question)}</textarea>${counter('question', L.question)}</label>
+      ${spread.inputs.personName ? `<label class="field"><span>Kişinin adı</span><input id="personName" maxlength="${L.personName}" autocomplete="off" value="${esc(state.inputs.personName)}" placeholder="İsteğe bağlı">${counter('personName', L.personName)}</label>` : ''}
+      <p class="hint">Açık uçlu sorular daha iyi okunur: 'Olacak mı?' yerine 'Neye dikkat etmeliyim?'</p>
+      <p class="soft-warning" id="repeat-warning" hidden>Aynı soruyu kısa sürede tekrar sormak okumayı bulanıklaştırır. Yine de devam edebilirsin.</p>
+    </form>`;
+  const form = $('#question-form');
+  const canContinue = () => !decision || (state.inputs.optionA.trim() && state.inputs.optionB.trim());
+  const refresh = () => {
+    primaryBtn.disabled = !canContinue();
+    $('#repeat-warning').hidden = !(state.inputs.question.trim() && service.recentSimilar(spread.id, state.inputs.question));
+  };
+  form.addEventListener('input', (event) => {
+    const field = event.target;
+    if (!(field.id in state.inputs)) return;
+    state.inputs[field.id] = field.value;
+    const max = Number(field.getAttribute('maxlength'));
+    const count = $(`#${field.id}-count`);
+    count.textContent = `${field.value.length} / ${max}`;
+    count.classList.toggle('is-full', field.value.length >= max);
+    refresh();
+  });
+  form.addEventListener('submit', (event) => { event.preventDefault(); if (canContinue()) submitQuestion(); });
+  setActions({
+    back: true,
+    secondary: decision ? null : { label: 'Soru olmadan devam et', onClick: () => { state.inputs.question = ''; submitQuestion(); } },
+    primary: { label: 'Kartları karıştır', disabled: !canContinue(), onClick: () => { if (canContinue()) submitQuestion(); } }
+  });
+  refresh();
+};
+
+function submitQuestion() {
+  const { question, optionA, optionB, personName } = state.inputs;
+  if (ENGINE.isCrisis(question, optionA, optionB)) return showCrisis();
+  track('question_submitted', { spreadId: state.spreadId, hasQuestion: Boolean(question.trim()), length: question.trim().length });
+  return go('shuffle');
+}
+
+function showCrisis() {
+  setHeading('Şu an yanındayız', 'Bu soru için okuma yapmıyoruz.');
+  body.innerHTML = `<div class="crisis-card" role="alert">
+      <p>Yazdıkların, şu an çok zor bir yerde olabileceğini düşündürüyor. Bunu tek başına taşımak zorunda değilsin ve bunun için kartlardan daha iyi bir destek var.</p>
+      <ul>
+        <li><strong>112</strong> · Acil bir tehlike varsa hemen ara.</li>
+        <li><strong>ALO 183</strong> · Sosyal destek hattı, 7/24.</li>
+        <li>Güvendiğin biriyle, bir yakınınla ya da bir ruh sağlığı uzmanıyla bugün konuşmayı dene.</li>
+      </ul>
+    </div>`;
+  setActions({ back: true, primary: { label: 'Ana ekrana dön', onClick: () => go('intent') } });
+}
+
+// ---------- 4 · Karıştırma ----------
+
+function ensureReading() {
+  if (!state.readingPromise) {
+    state.readingPromise = service.createReading({
+      spreadId: state.spreadId,
+      ...state.inputs,
+      reversalsEnabled: settings.reversals
+    });
+  }
+  return state.readingPromise;
+}
+
+RENDERERS.shuffle = () => {
+  const spread = currentSpread();
+  const question = state.inputs.question.trim();
+  const deckLayer = (cls) => `<span class="deck-half ${cls}">${'<span class="card-back"></span>'.repeat(4)}</span>`;
+  setHeading(spread.name, `${spread.cardCount} kart · yaklaşık ${spread.estMinutes} dakika`);
+  setProgress('');
+  body.innerHTML = `<div class="shuffle-step">
+      ${question ? `<p class="shuffle-question">“${esc(question)}”</p>` : ''}
+      <button type="button" class="deck" id="deck" aria-describedby="shuffle-instruction" aria-label="Deste. Karıştırmak için basılı tut." style="${cardBackVars(150, 240)}">
+        ${deckLayer('deck-left')}${deckLayer('deck-right')}
+      </button>
+      <p class="shuffle-instruction" id="shuffle-instruction" aria-live="polite">${reduced() ? 'Desteye dokun ya da otomatik karıştır' : 'Sorunu düşünerek desteye basılı tut'}</p>
+    </div>`;
+  setActions({ back: true, primary: { label: 'Otomatik karıştır', arrow: false, onClick: () => autoShuffle() } });
+  bindDeck($('#deck'));
+};
+
+function bindDeck(deck) {
+  let hold = null;
+  const instruction = $('#shuffle-instruction');
+  const start = () => {
+    if (state.busy || hold) return;
+    if (reduced()) { autoShuffle(); return; }
+    ensureReading();
+    deck.classList.add('is-shuffling');
+    sfx.riffleStart();
+    hold = { at: performance.now(), ready: false };
+    hold.timer = setTimeout(() => {
+      if (!hold) return;
+      hold.ready = true;
+      instruction.textContent = 'Hazır olunca bırak';
+      haptic(20);
+    }, SHUFFLE_HOLD_MS);
+  };
+  const end = () => {
+    if (!hold) return;
+    clearTimeout(hold.timer);
+    const { ready, at } = hold;
+    hold = null;
+    deck.classList.remove('is-shuffling');
+    sfx.riffleStop();
+    if (ready) finishShuffle('hold', performance.now() - at);
+  };
+  deck.addEventListener('pointerdown', (event) => { event.preventDefault(); deck.setPointerCapture?.(event.pointerId); start(); });
+  deck.addEventListener('pointerup', end);
+  deck.addEventListener('pointercancel', end);
+  deck.addEventListener('lostpointercapture', end);
+  deck.addEventListener('contextmenu', (event) => event.preventDefault());
+  deck.addEventListener('keydown', (event) => {
+    if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) { event.preventDefault(); start(); }
+  });
+  deck.addEventListener('keyup', (event) => { if (event.key === ' ' || event.key === 'Enter') end(); });
+}
+
+async function autoShuffle() {
+  if (state.busy) return;
+  state.busy = true;
+  ensureReading();
+  const deck = $('#deck');
+  primaryBtn.disabled = true;
+  if (reduced()) {
+    await animate(deck, [{ opacity: 1 }, { opacity: 0 }], { duration: 400, easing: 'ease-in-out', fill: 'forwards' });
+    return finishShuffle('auto', 400);
+  }
+  deck.classList.add('is-shuffling');
+  sfx.riffleStart();
+  await sleep(AUTO_SHUFFLE_MS);
+  sfx.riffleStop();
+  deck.classList.remove('is-shuffling');
+  return finishShuffle('auto', AUTO_SHUFFLE_MS);
+}
+
+async function finishShuffle(mode, durationMs) {
+  state.busy = true;
+  track('shuffle_completed', { mode, durationMs: Math.round(durationMs) });
+  try {
+    const { readingId } = await ensureReading();
+    const reading = await service.get(readingId);
+    state.readingId = readingId;
+    state.reading = reading;
+    state.picks = reading.cards.map(pickFromStored);
+    state.busy = false;
+    go('pick');
+  } catch (error) {
+    state.busy = false;
+    state.readingPromise = null;
+    statusEl.textContent = 'Bağlantı koptu, tekrar dene';
+    primaryBtn.disabled = false;
+  }
+}
+
+function pickFromStored(stored) {
+  const card = TAROT.getCard(stored.cardId);
+  const pick = { positionKey: stored.positionKey, fanIndex: stored.fanIndex, reversed: stored.reversed, card: { id: card.id, name: card.name, nameTr: card.nameTr, image: card.image }, pending: false };
+  pick.ready = preload(card.image);
+  return pick;
+}
+
+function preload(src) {
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = src;
+  return (img.decode ? img.decode() : Promise.resolve()).catch(() => {});
+}
+
+// ---------- 5 · Kart seçimi ----------
+
+RENDERERS.pick = () => {
+  const spread = currentSpread();
+  body.innerHTML = `<div class="pick-step">
+      <div class="layout-stage pick-stage" id="layout"></div>
+      <div class="fan-viewport" id="fan-viewport">
+        <div class="card-fan" id="fan" role="group" aria-label="Yüzü kapalı 78 kart. Ok tuşlarıyla gez, Enter ile seç."></div>
+      </div>
+      <ol class="sr-only" id="sr-list"></ol>
+    </div>`;
+  updatePickHeading();
+  setActions({ back: true, status: '' });
+  requestAnimationFrame(() => {
+    renderLayout($('#layout'), spread, 'pick');
+    updatePickHeading();
+    buildFan();
+    if (state.picks.length >= spread.cardCount) finishPicking();
+  });
+};
+
+function updatePickHeading() {
+  const spread = currentSpread();
+  const n = state.picks.length;
+  const next = spread.positions[n];
+  const three = spread.id === 'three';
+  setHeading(three ? 'Sana açılan üç kart' : `${spread.cardCount} kart seç`, next ? `Sıradaki: ${labelFor(next)}` : 'Kartların yerleşti.', { reference: three });
+  setProgress(`${n} / ${spread.cardCount}`);
+  $$('#layout .lay-slot').forEach((slot) => slot.classList.toggle('is-next', Boolean(next) && slot.dataset.key === next.key));
+}
+
+const fanState = { mobile: false, raf: 0 };
+
+function fanCardSize() {
+  return isMobile() ? { w: 62, h: 99 } : { w: 72, h: 115 };
+}
+
+function buildFan() {
+  const fan = $('#fan');
+  const viewport = $('#fan-viewport');
+  const { w, h } = fanCardSize();
+  const used = new Set(state.picks.map((p) => p.fanIndex));
+  fanState.mobile = isMobile();
+  fan.style.cssText = cardBackVars(w, h);
+  fan.innerHTML = Array.from({ length: DECK_SIZE }, (_, i) => `<button type="button" class="fan-card" data-index="${i}" tabindex="-1" aria-label="Kart ${i + 1} / ${DECK_SIZE}, yüzü kapalı. Seçmek için çift dokun"${used.has(i) ? ' disabled data-picked="true"' : ''}><span class="card-back"></span></button>`).join('');
+  const buttons = $$('.fan-card', fan);
+  if (fanState.mobile) {
+    const spacing = 44;
+    fan.style.width = `${(DECK_SIZE - 1) * spacing + w + viewport.clientWidth}px`;
+    buttons.forEach((b, i) => { b.dataset.x = String(viewport.clientWidth / 2 - w / 2 + i * spacing); });
+    viewport.scrollLeft = (fan.scrollWidth - viewport.clientWidth) / 2;
+    positionMobileFan();
+    viewport.onscroll = () => {
+      cancelAnimationFrame(fanState.raf);
+      fanState.raf = requestAnimationFrame(positionMobileFan);
+    };
+  } else {
+    fan.style.width = '';
+    const radius = 1300;
+    const spread = 17;
+    buttons.forEach((b, i) => {
+      const angle = -spread + (2 * spread * i) / (DECK_SIZE - 1);
+      const rad = (angle * Math.PI) / 180;
+      const x = 443 + radius * Math.sin(rad) - w / 2;
+      const y = 42 + radius * (1 - Math.cos(rad));
+      b.dataset.angle = String(angle);
+      b.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) rotate(${angle.toFixed(2)}deg)`;
+    });
+  }
+  const first = buttons.find((b) => !b.disabled);
+  if (first) first.tabIndex = 0;
+  fan.onclick = (event) => {
+    const button = event.target.closest('.fan-card');
+    if (button && !button.disabled) selectFanCard(Number(button.dataset.index));
+  };
+  fan.onkeydown = onFanKey;
+  fan.onfocusin = (event) => {
+    const button = event.target.closest('.fan-card');
+    if (button && fanState.mobile) scrollFanTo(button);
+  };
+  openFan(buttons);
+}
+
+// Kartlar transform ile dizildiği için scrollIntoView yanlış konuma gider.
+function scrollFanTo(button) {
+  const viewport = $('#fan-viewport');
+  const left = Number(button.dataset.x) + fanCardSize().w / 2 - viewport.clientWidth / 2;
+  viewport.scrollTo({ left, behavior: reduced() ? 'auto' : 'smooth' });
+}
+
+function positionMobileFan() {
+  const viewport = $('#fan-viewport');
+  if (!viewport) return;
+  const center = viewport.scrollLeft + viewport.clientWidth / 2;
+  const { w } = fanCardSize();
+  const radius = 620;
+  $$('.fan-card', viewport).forEach((b) => {
+    const x = Number(b.dataset.x);
+    const d = Math.max(-radius * 0.9, Math.min(radius * 0.9, x + w / 2 - center));
+    const rad = d / radius;
+    const y = 26 + radius * (1 - Math.cos(rad));
+    b.dataset.angle = String((rad * 180) / Math.PI);
+    b.style.transform = `translate(${x}px, ${y.toFixed(1)}px) rotate(${(rad * 180 / Math.PI).toFixed(2)}deg)`;
+  });
+}
+
+function openFan(buttons) {
+  if (reduced()) return;
+  const fan = $('#fan');
+  const viewport = $('#fan-viewport');
+  const originX = fanState.mobile ? viewport.scrollLeft + viewport.clientWidth / 2 - fanCardSize().w / 2 : 443 - fanCardSize().w / 2;
+  fan.classList.add('is-opening');
+  const animations = buttons.map((b, i) => b.animate(
+    [{ transform: `translate(${originX}px, -160px) rotate(0deg)`, opacity: 0 }, { transform: b.style.transform, opacity: 1 }],
+    { duration: 160, delay: i * 6, easing: 'cubic-bezier(0.33, 1, 0.68, 1)', fill: 'backwards' }
+  ));
+  Promise.all(animations.map((a) => a.finished.catch(() => {}))).then(() => fan.classList.remove('is-opening'));
+}
+
+function onFanKey(event) {
+  const buttons = $$('.fan-card', $('#fan'));
+  const open = buttons.filter((b) => !b.disabled);
+  if (!open.length) return;
+  const current = document.activeElement.closest?.('.fan-card');
+  let index = open.indexOf(current);
+  if (index < 0) index = 0;
+  let next = null;
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = open[Math.min(open.length - 1, index + 1)];
+  else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = open[Math.max(0, index - 1)];
+  else if (event.key === 'Home') next = open[0];
+  else if (event.key === 'End') next = open[open.length - 1];
+  if (!next) return;
+  event.preventDefault();
+  buttons.forEach((b) => { b.tabIndex = -1; });
+  next.tabIndex = 0;
+  next.focus({ preventScroll: true });
+}
+
+function selectFanCard(fanIndex) {
+  const spread = currentSpread();
+  if (state.picks.length >= spread.cardCount || state.picks.some((p) => p.fanIndex === fanIndex)) return;
+  const pickIndex = state.picks.length;
+  const position = spread.positions[pickIndex];
+  const pick = { positionKey: position.key, fanIndex, pending: true, card: null, reversed: false };
+  state.picks.push(pick);
+  const fanCard = $(`.fan-card[data-index="${fanIndex}"]`);
+  const wasFocused = document.activeElement === fanCard;
+  track('card_picked', { spreadId: spread.id, pickIndex });
+  haptic(10);
+  sfx.slide();
+  updatePickHeading();
+  announce(`${labelFor(position)} pozisyonuna bir kart seçildi. ${state.picks.length} / ${spread.cardCount}.`);
+
+  pick.request = requestPick(pick, pickIndex);
+  pick.flight = flyToSlot(fanCard, position).then(() => settleSlot(position.key));
+  fanCard.disabled = true;
+  fanCard.dataset.picked = 'true';
+  fanCard.tabIndex = -1;
+  if (wasFocused) {
+    const next = $$('.fan-card:not(:disabled)').find((b) => Number(b.dataset.index) > fanIndex) || $('.fan-card:not(:disabled)');
+    if (next) { next.tabIndex = 0; next.focus({ preventScroll: true }); }
+  }
+  if (state.picks.length === spread.cardCount) {
+    Promise.all(state.picks.map((p) => p.flight)).then(() => finishPicking());
+  }
+}
+
+function requestPick(pick, pickIndex) {
+  const task = () => ENGINE.withRetry(() => service.pick(state.readingId, pickIndex, pick.fanIndex), 3);
+  state.pickChain = state.pickChain.catch(() => {}).then(task);
+  return state.pickChain.then((result) => {
+    Object.assign(pick, { card: result.card, reversed: result.reversed, pending: false, failed: false });
+    pick.ready = preload(result.card.image);
+    const slot = slotEl(pick.positionKey);
+    if (slot) setSlotCard(slot, pick);
+    if (state.step === 'pick' && !state.picks.some((p) => p.failed)) statusEl.textContent = '';
+    if (state.step === 'reveal') updateReveal();
+  }).catch(() => {
+    pick.failed = true;
+    statusEl.textContent = 'Bağlantı koptu, tekrar dene';
+    secondaryBtn.hidden = false;
+    secondaryBtn.textContent = 'Tekrar dene';
+    secondaryBtn.onclick = retryFailedPicks;
+  });
+}
+
+function retryFailedPicks() {
+  secondaryBtn.hidden = true;
+  statusEl.textContent = '';
+  state.picks.forEach((pick, i) => { if (pick.failed) pick.request = requestPick(pick, i); });
+}
+
+function slotEl(key) {
+  return $(`#layout .lay-slot[data-key="${key}"]`);
+}
+
+async function flyToSlot(fanCard, position) {
+  const slot = slotEl(position.key);
+  if (!slot || !fanCard) return;
+  const source = visualRect(fanCard);
+  const target = visualRect(slot);
+  const angle = Number(fanCard.dataset.angle || 0);
+  const rot = position.slot.rot;
+  if (reduced()) {
+    fanCard.style.visibility = 'hidden';
+    slot.classList.add('is-filled');
+    await animate($('.lay-card', slot), [{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' });
+    return;
+  }
+  const flyer = document.createElement('div');
+  flyer.className = 'flyer';
+  flyer.style.cssText = `left:${target.left}px;top:${target.top}px;width:${target.width}px;height:${target.height}px;${cardBackVars(target.width, target.height)}`;
+  flyer.innerHTML = '<span class="card-back"></span>';
+  document.body.append(flyer);
+  fanCard.style.visibility = 'hidden';
+  const { w } = fanCardSize();
+  const scale = (w * pageScale()) / target.width;
+  const dx = source.left + source.width / 2 - (target.left + target.width / 2);
+  const dy = source.top + source.height / 2 - (target.top + target.height / 2);
+  const motion = spring(220, 26);
+  await animate(flyer, [
+    { transform: `translate(${dx}px, ${dy}px) rotate(${angle}deg) scale(${scale})` },
+    { transform: `translate(${dx / 2}px, ${dy / 2 - 40}px) rotate(${(angle + rot) / 2}deg) scale(${(scale + 1) / 2})`, offset: 0.5 },
+    { transform: `translate(0, 0) rotate(${rot}deg) scale(1)` }
+  ], { duration: Math.max(520, motion.duration), easing: motion.easing, fill: 'forwards' });
+  slot.classList.add('is-filled');
+  flyer.remove();
+}
+
+function settleSlot(key) {
+  const slot = slotEl(key);
+  if (!slot) return Promise.resolve();
+  haptic(10);
+  if (reduced()) return Promise.resolve();
+  return animate($('.lay-card', slot), [{ transform: 'scale(1.06)' }, { transform: 'scale(1)' }], { duration: 120, easing: 'ease-out' });
+}
+
+async function finishPicking() {
+  if (state.step !== 'pick' || state.finishing) return;
+  state.finishing = true;
+  await Promise.all(state.picks.map((p) => p.request));
+  if (state.picks.some((p) => p.failed)) { state.finishing = false; return; }
+  state.interpretationPromise = service.complete(state.readingId);
+  const fan = $('#fan-viewport');
+  if (fan && !reduced()) {
+    const motion = spring(260, 30);
+    await animate(fan, [{ transform: 'translateY(0)', opacity: 1 }, { transform: 'translateY(70%)', opacity: 0 }], { duration: Math.max(420, motion.duration), easing: motion.easing, fill: 'forwards' });
+  }
+  state.finishing = false;
+  go('reveal', { fromPick: true });
+}
+
+// ---------- 6–7 · Yerleşme ve açma ----------
+
+RENDERERS.reveal = (options) => {
+  const spread = currentSpread();
+  const three = spread.id === 'three';
+  setHeading(three ? 'Sana açılan üç kart' : spread.name, 'Kartlarına dokunarak aç', { reference: three });
+  const layout = $('#layout');
+  if (options.fromPick && layout) {
+    const before = new Map($$('.lay-slot', layout).map((s) => [s.dataset.key, localRect(s)]));
+    $('#fan-viewport').remove();
+    layout.classList.replace('pick-stage', 'reveal-stage');
+    renderLayout(layout, spread, 'reveal');
+    if (!reduced()) flipFrom(layout, before, spring(240, 28));
+  } else {
+    body.innerHTML = `<div class="reveal-step"><div class="layout-stage reveal-stage" id="layout"></div><ol class="sr-only" id="sr-list"></ol></div>`;
+    renderLayout($('#layout'), spread, 'reveal');
+  }
+  if (!state.interpretationPromise) state.interpretationPromise = service.complete(state.readingId);
+  setActions({
+    back: true,
+    secondary: { label: 'Hepsini aç', onClick: revealAll },
+    primary: { label: 'Yorumu gör', onClick: () => go('reading') }
+  });
+  primaryBtn.hidden = true;
+  updateReveal();
+};
+
+function flipFrom(container, before, motion) {
+  $$('.lay-slot', container).forEach((slot) => {
+    const from = before.get(slot.dataset.key);
+    if (!from) return;
+    const to = localRect(slot);
+    const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+    const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+    const s = from.width / to.width;
+    slot.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${s})` }, { transform: 'none' }], { duration: motion.duration, easing: motion.easing });
+  });
+}
+
+function updateReveal() {
+  const spread = currentSpread();
+  const total = spread.cardCount;
+  const count = state.revealed.size;
+  setProgress(`${count} / ${total}`);
+  const next = spread.positions.find((p) => !state.revealed.has(p.key));
+  $$('#layout .lay-slot').forEach((slot) => {
+    slot.classList.toggle('is-suggested', Boolean(next) && slot.dataset.key === next.key);
+  });
+  const done = count === total;
+  secondaryBtn.hidden = done;
+  if (done && primaryBtn.hidden) {
+    primaryBtn.hidden = false;
+    statusEl.textContent = 'Tüm kartlar açıldı';
+    if (!reduced()) animate(primaryBtn, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 250, easing: 'ease-out' });
+    primaryBtn.focus({ preventScroll: true });
+  }
+  renderSrList();
+}
+
+function renderSrList() {
+  const list = $('#sr-list');
+  if (!list) return;
+  const spread = currentSpread();
+  list.innerHTML = spread.positions.map((p) => {
+    const pick = state.picks.find((x) => x.positionKey === p.key);
+    const label = labelFor(p);
+    if (!pick) return `<li>${esc(label)}: boş</li>`;
+    if (!state.revealed.has(p.key) || !pick.card) return `<li>${esc(label)}: yüzü kapalı</li>`;
+    return `<li>${esc(label)}: ${esc(pick.card.name)}${pick.reversed ? ', ters' : ''}</li>`;
+  }).join('');
+}
+
+async function revealCard(key, mode) {
+  const spread = currentSpread();
+  const pick = state.picks.find((p) => p.positionKey === key);
+  if (!pick || state.revealed.has(key) || state.revealing.has(key)) return;
+  state.revealing.add(key);
+  if (pick.pending) await pick.request;
+  if (!pick.card) { state.revealing.delete(key); return; }
+  await pick.ready;
+  const slot = slotEl(key);
+  if (!slot) return;
+  setSlotCard(slot, pick);
+  service.reveal(state.readingId, key);
+  track('card_revealed', { spreadId: spread.id, positionKey: key, reversed: pick.reversed, mode });
+  const flip = $('.card-flip', slot);
+  const turn = $('.card-turn', slot);
+  if (reduced()) {
+    slot.classList.add('is-revealed');
+    if (pick.reversed) slot.classList.add('is-reversed');
+    await animate($('.face-front', slot), [{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' });
+  } else {
+    sfx.whoosh();
+    flip.style.willChange = 'transform';
+    setTimeout(() => haptic(15), FLIP_MS / 2);
+    await animate(flip, [
+      { transform: 'rotateY(0deg) scale(1)' },
+      { transform: 'rotateY(90deg) scale(1.08)', offset: 0.5 },
+      { transform: 'rotateY(180deg) scale(1)' }
+    ], { duration: FLIP_MS, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' });
+    slot.classList.add('is-revealed');
+    flip.getAnimations().forEach((a) => a.cancel());
+    flip.style.willChange = '';
+    if (pick.reversed) {
+      await animate(turn, [{ transform: 'rotate(0deg)' }, { transform: 'rotate(180deg)' }], { duration: 350, easing: 'ease-in-out', fill: 'forwards' });
+      slot.classList.add('is-reversed');
+      turn.getAnimations().forEach((a) => a.cancel());
+    }
+  }
+  state.revealing.delete(key);
+  state.revealed.add(key);
+  const position = spread.positions.find((p) => p.key === key);
+  updateSlotLabel(slot, position, 'reveal');
+  const label = $('.lay-detail', slot);
+  if (label && !reduced()) animate(label, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 250, easing: 'ease-out' });
+  const card = TAROT.getCard(pick.card.id);
+  const keywords = ENGINE.keywordsOf(card, pick.reversed, TAROT);
+  announce(`${labelFor(position)}: ${card.name}${pick.reversed ? ', ters' : ''}. ${keywords.join(', ')}.`);
+  if (state.step === 'reveal') updateReveal();
+}
+
+async function revealAll() {
+  const spread = currentSpread();
+  secondaryBtn.hidden = true;
+  const pending = spread.positions.filter((p) => !state.revealed.has(p.key) && !state.revealing.has(p.key));
+  for (let i = 0; i < pending.length; i++) {
+    revealCard(pending[i].key, 'all');
+    if (i < pending.length - 1) await sleep(150);
+  }
+}
+
+// ---------- Layout çizimi ----------
+
+function renderLayout(container, spread, mode) {
+  const narrow = isNarrow();
+  const geo = geometry(spread, container.clientWidth, container.clientHeight, mode, narrow);
+  container.style.setProperty('--cw', `${geo.cw}px`);
+  container.style.setProperty('--ch', `${geo.ch}px`);
+  container.style.setProperty('--label-w', `${Math.round(geo.cellW - 4)}px`);
+  container.style.setProperty('--kw-lines', geo.spanY === 0 ? 2 : 1);
+  container.dataset.mode = mode;
+  container.dataset.spread = spread.id;
+  const existing = new Map($$('.lay-slot', container).map((s) => [s.dataset.key, s]));
+  geo.slots.forEach((s) => {
+    let slot = existing.get(s.key);
+    if (!slot) {
+      slot = createSlot(s, mode);
+      container.append(slot);
+    }
+    existing.delete(s.key);
+    slot.classList.toggle('is-cross', Boolean(s.rot));
+    $('.lay-rot', slot).style.transform = `rotate(${s.rot}deg)`;
+    slot.style.cssText = `left:${s.left}px;top:${s.top}px;width:${geo.cw}px;height:${geo.ch}px;${cardBackVars(geo.cw, geo.ch)}`;
+    updateSlotLabel(slot, s.position, mode);
+    const pick = state.picks.find((p) => p.positionKey === s.key);
+    if (pick && mode !== 'preview') {
+      slot.classList.add('is-filled');
+      if (pick.card) setSlotCard(slot, pick);
+      if (state.revealed.has(s.key)) slot.classList.add('is-revealed', ...(pick.reversed ? ['is-reversed'] : []));
+    }
+  });
+  existing.forEach((slot) => slot.remove());
+  return geo;
+}
+
+function createSlot(s, mode) {
+  const slot = document.createElement('div');
+  slot.className = `lay-slot${s.rot ? ' is-cross' : ''}`;
+  slot.dataset.key = s.key;
+  const interactive = mode === 'reveal' || mode === 'pick';
+  const inner = `<span class="card-turn"><span class="card-flip"><span class="face face-back card-back"></span><span class="face face-front"><img alt="" decoding="async"></span></span></span>`;
+  slot.innerHTML = `<div class="lay-rot" style="transform:rotate(${s.rot}deg)">${interactive ? `<button type="button" class="lay-card">${inner}</button>` : `<span class="lay-card">${inner}</span>`}</div>
+    <div class="lay-label"><span class="lay-name"><span class="lay-num">${s.position.index}</span> <span class="lay-text"></span></span><span class="lay-detail"></span></div>`;
+  return slot;
+}
+
+function ensureSlotButton(slot) {
+  const card = $('.lay-card', slot);
+  if (card.tagName === 'BUTTON') return card;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'lay-card';
+  button.innerHTML = card.innerHTML;
+  card.replaceWith(button);
+  return button;
+}
+
+function updateSlotLabel(slot, position, mode) {
+  const label = labelFor(position);
+  $('.lay-num', slot).textContent = position.index;
+  $('.lay-text', slot).textContent = label;
+  const button = mode === 'reveal' ? ensureSlotButton(slot) : $('.lay-card', slot);
+  const pick = state.picks.find((p) => p.positionKey === position.key);
+  const detail = $('.lay-detail', slot);
+  if (mode === 'reveal' && pick && pick.card && state.revealed.has(position.key)) {
+    const card = TAROT.getCard(pick.card.id);
+    const kw = ENGINE.keywordsOf(card, pick.reversed, TAROT);
+    detail.innerHTML = `<span class="lay-card-name">${esc(card.name)}${pick.reversed ? ' <span class="badge-reversed">Ters</span>' : ''}</span>${position.slot.rot ? '' : `<span class="lay-keywords">${esc(kw.join(' · '))}</span>`}`;
+  } else {
+    detail.innerHTML = '';
+  }
+  if (button.tagName === 'BUTTON') {
+    if (mode === 'pick') {
+      button.tabIndex = -1;
+      button.setAttribute('aria-hidden', 'true');
+    } else {
+      button.removeAttribute('aria-hidden');
+      button.tabIndex = 0;
+      const revealed = pick && state.revealed.has(position.key) && pick.card;
+      button.setAttribute('aria-label', revealed
+        ? `${position.index}. ${label}: ${pick.card.name}${pick.reversed ? ', ters' : ''}. Kart detayını aç.`
+        : `${position.index}. ${label}: yüzü kapalı. Açmak için dokun.`);
+      button.onclick = () => {
+        if (state.revealed.has(position.key)) openCardDetail(pick.card.id, pick.reversed, $('.face-front img', slot));
+        else revealCard(position.key, 'tap');
+      };
+    }
+  }
+}
+
+function setSlotCard(slot, pick) {
+  const img = $('.face-front img', slot);
+  if (pick.card && img.getAttribute('src') !== pick.card.image) img.src = pick.card.image;
+  const position = currentSpread().positions.find((p) => p.key === pick.positionKey);
+  if (position) updateSlotLabel(slot, position, state.step === 'reveal' ? 'reveal' : slot.parentElement.dataset.mode);
+}
+
+function morphLayout(container, spread, mode) {
+  const before = new Map($$('.lay-slot', container).map((s) => [s.dataset.key, localRect(s)]));
+  const old = new Set(before.keys());
+  const leaving = [];
+  $$('.lay-slot', container).forEach((slot) => {
+    if (!spread.positions.some((p) => p.key === slot.dataset.key)) {
+      const clone = slot.cloneNode(true);
+      clone.classList.add('is-leaving');
+      leaving.push(clone);
+    }
+  });
+  renderLayout(container, spread, mode);
+  if (reduced()) return;
+  const motion = spring(300, 30);
+  leaving.forEach((clone) => {
+    container.append(clone);
+    animate(clone, [{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease-out' }).then(() => clone.remove());
+  });
+  $$('.lay-slot:not(.is-leaving)', container).forEach((slot) => {
+    if (!old.has(slot.dataset.key)) {
+      slot.animate([{ opacity: 0, transform: 'scale(.9)' }, { opacity: 1, transform: 'none' }], { duration: 260, delay: 80, easing: 'ease-out', fill: 'backwards' });
+    }
+  });
+  flipFrom(container, before, motion);
+}
+
+// ---------- 8 · Yorum ----------
+
+RENDERERS.reading = async () => {
+  const token = state.renderToken;
+  const spread = currentSpread();
+  setProgress('');
+  setActions({
+    back: true,
+    secondary: { label: 'Paylaş', onClick: shareReading },
+    primary: { label: 'Yeni okuma', onClick: () => go('intent') }
+  });
+  secondaryBtn.disabled = true;
+  const reading = state.reading;
+  setHeading(spread.name, headingMeta(reading));
+  body.innerHTML = `<div class="reading-step"><div class="reading-scroll" aria-busy="true">
+      <div class="skeleton summary-skeleton"></div>${'<div class="skeleton row-skeleton"></div>'.repeat(Math.min(3, spread.cardCount))}
+    </div></div>`;
+  const interpretation = await (state.interpretationPromise || service.complete(state.readingId));
+  const viewed = state.viewOnly ? state.reading : await service.markViewed(state.readingId);
+  if (token !== state.renderToken) return;
+  state.reading = viewed;
+  if (!state.viewOnly) {
+    track('reading_viewed', { spreadId: spread.id, msFromStart: Math.round(performance.now() - (state.startedAt || performance.now())), interpretationSource: interpretation.source });
+  }
+  secondaryBtn.disabled = false;
+  body.innerHTML = `<div class="reading-step">${readingMarkup(viewed, spread, interpretation)}</div>`;
+  bindReading(viewed, spread);
+};
+
+function headingMeta(reading) {
+  const date = new Date(reading.completedAt || reading.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+  return reading.question ? `${date} · “${reading.question}”` : date;
+}
+
+function readingMarkup(reading, spread, interpretation) {
+  const byKey = Object.fromEntries(reading.cards.map((c) => [c.positionKey, c]));
+  const texts = Object.fromEntries(interpretation.positions.map((p) => [p.positionKey, p.text]));
+  const mood = MOODS[$('#mood').value].join(' ');
+  const items = spread.positions.map((position, i) => {
+    const drawn = byKey[position.key];
+    const card = TAROT.getCard(drawn.cardId);
+    const keywords = ENGINE.keywordsOf(card, drawn.reversed, TAROT);
+    return `<li class="position-card fade-up" style="--i:${i + 1}">
+        <button type="button" class="thumb${drawn.reversed ? ' is-reversed' : ''}" data-card="${esc(card.id)}" data-reversed="${drawn.reversed}" aria-label="${esc(card.name)} kartını büyüt"><img src="${esc(card.image)}" alt="" decoding="async"></button>
+        <div class="position-copy">
+          <p class="position-label">${position.index} · ${esc(ENGINE.displayLabel(position, reading))}</p>
+          <h3>${esc(card.name)} <span class="card-tr">${esc(card.nameTr)}</span>${drawn.reversed ? ' <span class="badge-reversed">Ters</span>' : ''}</h3>
+          <ul class="chips" aria-label="Anahtar kelimeler">${keywords.map((k) => `<li>${esc(k)}</li>`).join('')}</ul>
+          <p>${esc(texts[position.key])}</p>
+        </div>
+      </li>`;
+  }).join('');
+  const labels = Object.fromEntries(spread.positions.map((p) => [p.key, p]));
+  const pairs = interpretation.pairs ? `<section class="reading-block fade-up" style="--i:${spread.cardCount + 1}"><h3>Pozisyon çiftleri</h3><ul class="pair-list">${interpretation.pairs.map((pair) => `<li><strong>${labels[pair.keys[0]].index}–${labels[pair.keys[1]].index} · ${esc(labels[pair.keys[0]].label)} ve ${esc(labels[pair.keys[1]].label)}</strong><p>${esc(pair.text)}</p></li>`).join('')}</ul></section>` : '';
+  const compare = interpretation.comparison ? `<section class="reading-block fade-up" style="--i:${spread.cardCount + 1}"><h3>A ve B karşılaştırması</h3><div class="compare-grid">
+      <div><h4>${esc(reading.optionA || 'A')}</h4><p>${esc(interpretation.comparison.a)}</p></div>
+      <div><h4>${esc(reading.optionB || 'B')}</h4><p>${esc(interpretation.comparison.b)}</p></div>
+    </div><p class="compare-note">${esc(interpretation.comparison.note)}</p></section>` : '';
+  const reminder = spread.id === 'daily' ? `<label class="toggle-row"><span><strong>Her sabah hatırlat</strong><small>Saat ${esc(settings.reminderTime)} · Ayarlar'dan değiştirebilirsin.</small></span><input type="checkbox" role="switch" id="reminder-toggle"${settings.reminder ? ' checked' : ''}></label>` : '';
+  return `<div class="reading-scroll" tabindex="0" aria-label="Yorum">
+      <section class="summary-card fade-up" style="--i:0">
+        <p class="eyebrow">GENEL SENTEZ</p>
+        <p class="summary-text">${esc(interpretation.summary)}</p>
+        ${interpretation.summaryMore ? `<p class="summary-more">${esc(interpretation.summaryMore)}</p>` : ''}
+        <p class="summary-mood">Bugün içinden geçen: ${esc(mood)}</p>
+      </section>
+      <ol class="position-cards">${items}</ol>
+      ${compare}${pairs}
+      <section class="reading-block reading-actions fade-up" style="--i:${spread.cardCount + 2}">
+        <label class="field"><span>Not ekle</span><textarea id="note" rows="3" maxlength="2000" placeholder="Bu okuma sana ne düşündürdü?">${esc(reading.note || '')}</textarea><span class="counter" id="note-state" aria-live="polite">Okuma otomatik kaydedildi</span></label>
+        ${reminder}
+      </section>
+      <p class="disclaimer">Tarot bir yansıtma aracıdır; sağlık, hukuk ve finans kararlarında uzman görüşünün yerini tutmaz.</p>
+    </div>`;
+}
+
+function bindReading(reading, spread) {
+  const scroller = $('.reading-scroll', body);
+  scroller.addEventListener('click', (event) => {
+    const thumb = event.target.closest('.thumb');
+    if (thumb) openCardDetail(thumb.dataset.card, thumb.dataset.reversed === 'true', $('img', thumb));
+  });
+  let timer = 0;
+  $('#note').addEventListener('input', (event) => {
+    clearTimeout(timer);
+    $('#note-state').textContent = 'Kaydediliyor…';
+    timer = setTimeout(async () => {
+      await service.patch(reading.id, { note: event.target.value });
+      $('#note-state').textContent = 'Not kaydedildi';
+    }, 500);
+  });
+  const reminder = $('#reminder-toggle');
+  if (reminder) {
+    reminder.addEventListener('change', () => {
+      settings.reminder = reminder.checked;
+      saveSettings();
+      track('daily_reminder_toggled', { enabled: reminder.checked });
+      if (reminder.checked && window.Notification && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
+    });
+  }
+}
+
+async function openSavedReading(reading) {
+  resetReading();
+  state.reading = reading;
+  state.readingId = reading.id;
+  state.spreadId = reading.spreadId;
+  state.viewOnly = reading.status === 'complete';
+  state.picks = reading.cards.map(pickFromStored);
+  state.revealed = new Set(reading.cards.map((c) => c.positionKey));
+  state.interpretationPromise = reading.interpretation ? Promise.resolve(reading.interpretation) : service.complete(reading.id);
+  return go('reading');
+}
+
+async function resumeReading(reading) {
+  if (!reading) return undefined;
+  resetReading();
+  const spread = SPREADS.getSpread(reading.spreadId);
+  state.reading = reading;
+  state.readingId = reading.id;
+  state.spreadId = reading.spreadId;
+  state.intentId = spread.intents[0];
+  state.inputs = { question: reading.question || '', optionA: reading.optionA || '', optionB: reading.optionB || '', personName: reading.personName || '' };
+  state.readingPromise = Promise.resolve({ readingId: reading.id, existing: true });
+  state.picks = reading.cards.map(pickFromStored);
+  state.revealed = new Set(reading.cards.filter((c) => c.revealedAt).map((c) => c.positionKey));
+  state.startedAt = performance.now();
+  if (state.picks.length < spread.cardCount) return go('pick');
+  state.interpretationPromise = service.complete(reading.id);
+  return go('reveal');
+}
+
+// ---------- Kart detayı ----------
+
+function openCardDetail(cardId, reversed, fromImg) {
+  const card = TAROT.getCard(cardId);
+  const dialog = dialogs.card;
+  const img = $('#card-dialog-img');
+  img.src = card.image;
+  img.classList.toggle('is-reversed', Boolean(reversed));
+  $('#card-dialog-meta').textContent = TAROT.cardMeta(card).toLocaleUpperCase('tr');
+  $('#card-dialog-title').textContent = card.name;
+  $('#card-dialog-tr').textContent = `${card.nameTr}${reversed ? ' · bu okumada ters' : ''}`;
+  $('#card-dialog-upright').textContent = card.upright;
+  $('#card-dialog-reversed').textContent = card.reversed;
+  dialog.showModal();
+  if (!fromImg || reduced()) return;
+  const from = visualRect(fromImg);
+  const to = img.getBoundingClientRect();
+  if (!from.width || !to.width) return;
+  const motion = spring(260, 28);
+  const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+  const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+  const turn = reversed ? ' rotate(180deg)' : '';
+  img.animate([
+    { transform: `translate(${dx}px, ${dy}px) scale(${from.width / to.width})${turn}` },
+    { transform: reversed ? 'rotate(180deg)' : 'none' }
+  ], { duration: Math.max(320, motion.duration), easing: motion.easing });
+  animate(dialog, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' });
+}
+
+// ---------- Paylaş ----------
+
+async function shareReading() {
+  const reading = state.reading;
+  const spread = currentSpread();
+  const interpretation = await (state.interpretationPromise || service.complete(reading.id));
+  let blob;
+  try { blob = await storyImage(reading, spread, interpretation, true); } catch (error) { blob = null; }
+  if (!blob) blob = await storyImage(reading, spread, interpretation, false);
+  track('reading_shared', { spreadId: spread.id });
+  const file = new File([blob], `kendine-don-${spread.id}.png`, { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: `kendine dön · ${spread.name}` }); return; } catch (error) { if (error.name === 'AbortError') return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = file.name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  statusEl.textContent = 'Paylaşım görseli indirildi';
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+  const words = text.split(/\s+/);
+  let line = '';
+  let lines = 0;
+  for (let i = 0; i < words.length; i++) {
+    const test = line ? `${line} ${words[i]}` : words[i];
+    if (ctx.measureText(test).width > maxWidth && line) {
+      if (lines === maxLines - 1) { ctx.fillText(`${line}…`, x, y); return y + lineHeight; }
+      ctx.fillText(line, x, y);
+      line = words[i];
+      y += lineHeight;
+      lines++;
+    } else {
+      line = test;
+    }
+  }
+  if (line) ctx.fillText(line, x, y);
+  return y + lineHeight;
+}
+
+async function storyImage(reading, spread, interpretation, withFaces) {
+  await document.fonts.ready;
+  const canvas = document.createElement('canvas');
+  canvas.width = 1080;
+  canvas.height = 1920;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fcf4e0';
+  ctx.fillRect(0, 0, 1080, 1920);
+  ctx.strokeStyle = '#cfa24e';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(48, 48, 984, 1824);
+  ctx.fillStyle = '#210e2b';
+  ctx.textAlign = 'center';
+  ctx.font = '700 64px TarotDisplay, Georgia, serif';
+  ctx.fillText('kendine dön', 540, 170);
+  ctx.font = '600 22px TarotUI, Arial, sans-serif';
+  ctx.fillStyle = '#675975';
+  ctx.fillText('İÇİNDE KALANLARA BİR YER', 540, 210);
+  ctx.fillStyle = '#210e2b';
+  ctx.font = '700 56px TarotDisplay, Georgia, serif';
+  ctx.fillText(spread.name, 540, 320);
+  ctx.font = '28px TarotUI, Arial, sans-serif';
+  ctx.fillStyle = '#7e7390';
+  ctx.fillText(new Date(reading.completedAt || reading.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }), 540, 368);
+
+  const geo = geometry(spread, 900, 820, 'share', false);
+  const byKey = Object.fromEntries(reading.cards.map((c) => [c.positionKey, c]));
+  const faces = withFaces ? await Promise.all(spread.positions.map((p) => loadImage(TAROT.getCard(byKey[p.key].cardId).image))) : [];
+  geo.slots.forEach((s, i) => {
+    const drawn = byKey[s.key];
+    const card = TAROT.getCard(drawn.cardId);
+    const cx = 90 + s.left + geo.cw / 2;
+    const cy = 420 + s.top + geo.ch / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(((s.rot + (drawn.reversed ? 180 : 0)) * Math.PI) / 180);
+    if (faces[i]) ctx.drawImage(faces[i], -geo.cw / 2, -geo.ch / 2, geo.cw, geo.ch);
+    else { ctx.fillStyle = '#264abd'; ctx.fillRect(-geo.cw / 2, -geo.ch / 2, geo.cw, geo.ch); }
+    ctx.strokeStyle = '#cfa24e';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-geo.cw / 2, -geo.ch / 2, geo.cw, geo.ch);
+    ctx.restore();
+    if (!s.rot) {
+      ctx.fillStyle = '#210e2b';
+      ctx.font = `600 ${Math.max(16, Math.round(geo.cw / 7))}px TarotUI, Arial, sans-serif`;
+      ctx.fillText(card.name + (drawn.reversed ? ' (Ters)' : ''), cx, cy + geo.ch / 2 + 30, geo.cellW);
+      ctx.fillStyle = '#847690';
+      ctx.font = `${Math.max(14, Math.round(geo.cw / 8))}px TarotUI, Arial, sans-serif`;
+      ctx.fillText(ENGINE.displayLabel(s.position, reading), cx, cy + geo.ch / 2 + 54, geo.cellW);
+    }
+  });
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#210e2b';
+  ctx.font = '32px TarotDisplay, Georgia, serif';
+  wrapText(ctx, interpretation.summary, 110, 1330, 860, 46, 9);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#93849b';
+  ctx.font = '20px TarotUI, Arial, sans-serif';
+  ctx.fillText('Tarot bir yansıtma aracıdır; uzman görüşünün yerini tutmaz.', 540, 1820);
+  return new Promise((resolve, reject) => {
+    try { canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('blob'))), 'image/png'); } catch (error) { reject(error); }
+  });
+}
+
+// ---------- Diyaloglar ----------
+
+let guideBuilt = false;
+function buildGuide() {
+  if (guideBuilt) return;
+  guideBuilt = true;
+  $('#guide-grid').innerHTML = TAROT.CARDS.map((card) => {
+    const line = card.keywords.slice(0, 3).join(', ');
+    return `<article class="guide-card"><div class="guide-art"><span class="card-visual photo-face" aria-hidden="true"><img src="${card.image}" alt="" loading="lazy" decoding="async"></span></div><h3>${card.nameTr}</h3><p>${line}</p></article>`;
+  }).join('');
+}
+
+function openSpreads() {
+  $('#spread-list').innerHTML = SPREADS.SPREADS.map((spread) => `<li><button type="button" class="spread-option" data-spread="${spread.id}">
+      <span class="layout-thumb" data-thumb="${spread.id}" aria-hidden="true"></span>
+      <span><strong>${esc(spread.name)}</strong><small>${esc(SPREADS.chip(spread))}</small></span>
+    </button></li>`).join('');
+  dialogs.spreads.showModal();
+  $$('[data-thumb]', dialogs.spreads).forEach((el) => drawThumb(el, SPREADS.getSpread(el.dataset.thumb)));
+}
+
+$('#spread-list').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-spread]');
+  if (!button) return;
+  dialogs.spreads.close();
+  const spread = SPREADS.getSpread(button.dataset.spread);
+  resetInputs();
+  state.intentId = spread.intents[0];
+  state.startedAt = performance.now();
+  if (spread.id === 'daily') { openDaily(); return; }
+  state.spreadId = spread.id;
+  go('confirm');
+});
+
+function drawThumb(el, spread) {
+  const geo = geometry(spread, 56, 56, 'thumb', false);
+  el.innerHTML = geo.slots.map((s) => `<i style="left:${s.left}px;top:${s.top}px;width:${geo.cw}px;height:${geo.ch}px;transform:rotate(${s.rot}deg)"></i>`).join('');
+}
+
+async function renderHistory() {
+  const filter = $('#history-filter').value;
+  const list = await service.list({ spreadId: filter || undefined });
+  const el = $('#history-list');
+  if (!list.length) {
+    el.innerHTML = '<li class="empty-state">Henüz tamamlanmış bir okuman yok. İlk açılımın burada görünecek.</li>';
+    return;
+  }
+  el.innerHTML = list.map((r) => {
+    const spread = SPREADS.getSpread(r.spreadId);
+    const date = new Date(r.completedAt || r.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+    return `<li><button type="button" class="history-item" data-id="${esc(r.id)}">
+        <span class="layout-thumb" data-thumb="${spread.id}" aria-hidden="true"></span>
+        <span><strong>${esc(spread.name)}</strong><small>${esc(date)}</small>${r.question ? `<em>“${esc(r.question)}”</em>` : ''}</span>
+      </button></li>`;
+  }).join('');
+  $$('[data-thumb]', el).forEach((thumb) => drawThumb(thumb, SPREADS.getSpread(thumb.dataset.thumb)));
+}
+
+$('#history-filter').innerHTML += SPREADS.SPREADS.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+$('#history-filter').addEventListener('change', renderHistory);
+$('#history-list').addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-id]');
+  if (!button) return;
+  const reading = await service.get(button.dataset.id);
+  dialogs.history.close();
+  openSavedReading(reading);
+});
+
+function openSettings() {
+  const form = $('#settings-form');
+  form.reversals.checked = settings.reversals;
+  form.sound.checked = settings.sound;
+  form.haptic.checked = settings.haptic;
+  form.reminderTime.value = settings.reminderTime;
+  $$('input[name=motion]', form).forEach((r) => { r.checked = r.value === (reduced() ? 'reduced' : 'full'); });
+  dialogs.settings.showModal();
+}
+
+$('#settings-form').addEventListener('change', (event) => {
+  const field = event.target;
+  if (field.name === 'motion') settings.motion = field.value;
+  else if (field.type === 'checkbox') settings[field.name] = field.checked;
+  else settings[field.name] = field.value;
+  saveSettings();
+  applyMotion();
+});
+
+$('#open-guide').addEventListener('click', () => { buildGuide(); dialogs.guide.showModal(); });
+$('#open-history').addEventListener('click', () => { renderHistory(); dialogs.history.showModal(); });
+$('#open-settings').addEventListener('click', openSettings);
+
+$$('[data-nav="home"]').forEach((link) => link.addEventListener('click', (event) => {
+  event.preventDefault();
+  if (inReading()) openLeaveDialog();
+  else if (state.step !== 'intent') go('intent');
+}));
+
+Object.values(dialogs).forEach((dialog) => dialog.addEventListener('click', (event) => {
+  if (event.target !== dialog) return;
+  const rect = dialog.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+}));
+
+$('#mood').addEventListener('change', (event) => {
+  const [first, second] = MOODS[event.target.value];
+  const lines = $('.mood-copy').children;
+  lines[0].textContent = first;
+  lines[1].textContent = second;
+});
+
+// ---------- Yeniden boyutlandırma ----------
+
+let resizeRaf = 0;
+let lastMobile = isMobile();
+function resizeLayout() {
+  document.documentElement.style.setProperty('--page-scale', pageScale());
+  const mobile = isMobile();
+  const layout = $('#layout');
+  if (state.step === 'pick' && mobile !== lastMobile) buildFan();
+  if (layout && layout.dataset.mode) renderLayout(layout, currentSpread(), layout.dataset.mode);
+  if (state.step === 'pick' && fanState.mobile) positionMobileFan();
+  lastMobile = mobile;
+}
+function onViewportChange() {
+  cancelAnimationFrame(resizeRaf);
+  resizeRaf = requestAnimationFrame(resizeLayout);
+}
+window.addEventListener('resize', onViewportChange);
+window.visualViewport?.addEventListener('resize', onViewportChange);
+document.addEventListener('scroll', () => {
+  if (scrollX || scrollY) scrollTo(0, 0);
+}, { passive: true });
+systemReduced.addEventListener?.('change', applyMotion);
+
+applyMotion();
+resizeLayout();
+history.replaceState({ kd: 'base' }, '');
+go('intent', { focus: false });

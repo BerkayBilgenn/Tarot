@@ -1,0 +1,742 @@
+// Okuma motoru: seed, permütasyon, seçim, kayıt ve bağlamsal yorum.
+// Yorum metni Tarot Yorum Motoru'nun (cme-0.1) Reading Plan'ından üretilir.
+// Spec'te sunucuda duran kısım (seed, permütasyon, okuma kayıtları) burada `createService`
+// içinde tutulur ve dışarıya yalnızca spec'teki API yanıtlarının şekli verilir.
+(function (root) {
+  'use strict';
+
+  // ---------- ChaCha20 (128 bit anahtar) tabanlı deterministik, kriptografik PRNG ----------
+
+  const TAU = [0x61707865, 0x3120646e, 0x79622d36, 0x6b206574]; // "expand 16-byte k"
+
+  function rotl(v, n) { return (v << n) | (v >>> (32 - n)); }
+
+  function quarter(s, a, b, c, d) {
+    s[a] = (s[a] + s[b]) | 0; s[d] = rotl(s[d] ^ s[a], 16);
+    s[c] = (s[c] + s[d]) | 0; s[b] = rotl(s[b] ^ s[c], 12);
+    s[a] = (s[a] + s[b]) | 0; s[d] = rotl(s[d] ^ s[a], 8);
+    s[c] = (s[c] + s[d]) | 0; s[b] = rotl(s[b] ^ s[c], 7);
+  }
+
+  function chachaBlock(key, counter) {
+    const input = [...TAU, ...key, ...key, counter, 0, 0, 0];
+    const s = input.slice();
+    for (let i = 0; i < 10; i++) {
+      quarter(s, 0, 4, 8, 12); quarter(s, 1, 5, 9, 13); quarter(s, 2, 6, 10, 14); quarter(s, 3, 7, 11, 15);
+      quarter(s, 0, 5, 10, 15); quarter(s, 1, 6, 11, 12); quarter(s, 2, 7, 8, 13); quarter(s, 3, 4, 9, 14);
+    }
+    return s.map((v, i) => (v + input[i]) >>> 0);
+  }
+
+  function seedToKey(seed) {
+    if (!/^[0-9a-f]{32}$/.test(seed)) throw new Error('seed 128 bit hex olmalı');
+    return [0, 1, 2, 3].map((i) => parseInt(seed.slice(i * 8, i * 8 + 8), 16) >>> 0);
+  }
+
+  function createRng(seed) {
+    const key = seedToKey(seed);
+    let counter = 0;
+    let block = [];
+    const next32 = () => {
+      if (!block.length) block = chachaBlock(key, counter++);
+      return block.shift();
+    };
+    // Reddetme örneklemesiyle [0, n) aralığında tarafsız tam sayı.
+    const below = (n) => {
+      const limit = Math.floor(0x100000000 / n) * n;
+      let v;
+      do { v = next32(); } while (v >= limit);
+      return v % n;
+    };
+    return { next32, below };
+  }
+
+  function randomSeed(cryptoImpl) {
+    const c = cryptoImpl || root.crypto;
+    const bytes = new Uint8Array(16);
+    c.getRandomValues(bytes);
+    return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  // Seed'den 78 kartlık Fisher–Yates permütasyonu ve her yelpaze yeri için terslik biti.
+  function deriveDeck(seed, cardIds, reversalsEnabled) {
+    const rng = createRng(seed);
+    const order = cardIds.slice();
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = rng.below(i + 1);
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const reversed = order.map(() => rng.below(2) === 1 && Boolean(reversalsEnabled));
+    return { order, reversed };
+  }
+
+  // ---------- Tarih ----------
+
+  function localDate(date) {
+    const d = date || new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  const DAY = 24 * 60 * 60 * 1000;
+
+  // ---------- Metin yardımcıları ----------
+
+  const CRISIS = /(intihar|kendimi (öldür|asmak|asacağım)|ölmek istiyorum|yaşamak istemiyorum|kendime zarar|canıma kıy|hayatıma son|bileklerimi kes|artık yaşamak)/i;
+
+  function isCrisis(...texts) {
+    return texts.some((text) => text && CRISIS.test(text.toLocaleLowerCase('tr')));
+  }
+
+  function tokens(text) {
+    return new Set((text || '').toLocaleLowerCase('tr').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter((w) => w.length > 2));
+  }
+
+  function similarQuestions(a, b) {
+    const ta = tokens(a);
+    const tb = tokens(b);
+    if (!ta.size || !tb.size) return false;
+    let shared = 0;
+    ta.forEach((w) => { if (tb.has(w)) shared++; });
+    return shared / (ta.size + tb.size - shared) >= 0.6;
+  }
+
+  const clip = (text, max) => (text || '').trim().slice(0, max);
+
+  // ---------- Servis (spec'teki API'nin yerel karşılığı) ----------
+
+  function memoryStorage() {
+    const data = new Map();
+    return { getItem: (k) => (data.has(k) ? data.get(k) : null), setItem: (k, v) => data.set(k, String(v)), removeItem: (k) => data.delete(k) };
+  }
+
+  function createService(options) {
+    const opts = options || {};
+    const storage = opts.storage || memoryStorage();
+    const cards = opts.cards;
+    const spreads = opts.spreads;
+    const now = opts.now || (() => new Date());
+    const cryptoImpl = opts.crypto;
+    const latency = opts.latency || 0;
+    const KEY = 'kd.readings.v1';
+    const DEVICE = 'kd.device.v1';
+    const cardIds = cards.CARDS.map((card) => card.id);
+
+    const wait = (value) => new Promise((resolve) => setTimeout(() => resolve(value), latency));
+    const load = () => { try { return JSON.parse(storage.getItem(KEY)) || []; } catch (e) { return []; } };
+    const save = (list) => storage.setItem(KEY, JSON.stringify(list));
+    const find = (list, id) => {
+      const reading = list.find((r) => r.id === id);
+      if (!reading) throw new Error('Okuma bulunamadı');
+      return reading;
+    };
+
+    function userId() {
+      let id = storage.getItem(DEVICE);
+      if (!id) { id = 'anon-' + randomSeed(cryptoImpl).slice(0, 16); storage.setItem(DEVICE, id); }
+      return id;
+    }
+
+    function cardView(id) {
+      const card = cards.getCard(id);
+      return { id: card.id, name: card.name, nameTr: card.nameTr, image: card.image };
+    }
+
+    // İstemciye dönen kopya: seed ve permütasyon hiçbir zaman çıkmaz.
+    function publicReading(r) {
+      if (!r) return null;
+      const { seed, ...rest } = r;
+      return JSON.parse(JSON.stringify(rest));
+    }
+
+    function expireDrafts(list) {
+      const t = now().getTime();
+      let changed = false;
+      list.forEach((r) => {
+        if ((r.status === 'picking' || r.status === 'revealing') && t - Date.parse(r.createdAt) > 7 * DAY) {
+          r.status = 'abandoned';
+          changed = true;
+        }
+      });
+      if (changed) save(list);
+    }
+
+    function createReading(input) {
+      const spread = spreads.getSpread(input.spreadId);
+      if (!spread) return Promise.reject(new Error('Bilinmeyen açılım'));
+      const list = load();
+      const uid = userId();
+      const date = localDate(now());
+      if (spread.id === 'daily') {
+        const existing = list.find((r) => r.spreadId === 'daily' && r.userId === uid && r.localDate === date && r.status !== 'abandoned');
+        if (existing) return wait({ readingId: existing.id, cardCount: 1, existing: true });
+      }
+      if (spread.inputs.options === 'required' && (!clip(input.optionA, 40) || !clip(input.optionB, 40))) {
+        return Promise.reject(new Error('A ve B seçenekleri zorunlu'));
+      }
+      const reading = {
+        id: 'r-' + randomSeed(cryptoImpl).slice(0, 12),
+        userId: uid,
+        spreadId: spread.id,
+        status: 'picking',
+        question: spread.inputs.question === 'none' ? undefined : clip(input.question, 200) || undefined,
+        optionA: spread.inputs.options ? clip(input.optionA, 40) : undefined,
+        optionB: spread.inputs.options ? clip(input.optionB, 40) : undefined,
+        personName: spread.inputs.personName ? clip(input.personName, 30) || undefined : undefined,
+        reversalsEnabled: input.reversalsEnabled !== false,
+        seed: randomSeed(cryptoImpl),
+        cards: [],
+        localDate: spread.id === 'daily' ? date : undefined,
+        createdAt: now().toISOString(),
+      };
+      list.push(reading);
+      save(list);
+      return wait({ readingId: reading.id, cardCount: spread.cardCount, existing: false });
+    }
+
+    function pick(readingId, pickIndex, fanIndex) {
+      try {
+        const list = load();
+        const reading = find(list, readingId);
+        const spread = spreads.getSpread(reading.spreadId);
+        const done = reading.cards[pickIndex];
+        if (done) {
+          if (done.fanIndex !== fanIndex) throw new Error('Bu seçim zaten yapıldı');
+          return wait({ positionKey: done.positionKey, card: cardView(done.cardId), reversed: done.reversed });
+        }
+        if (!Number.isInteger(fanIndex) || fanIndex < 0 || fanIndex >= cardIds.length) throw new Error('Geçersiz yelpaze yeri');
+        if (pickIndex !== reading.cards.length || pickIndex >= spread.cardCount) throw new Error('Geçersiz seçim sırası');
+        if (reading.cards.some((c) => c.fanIndex === fanIndex)) throw new Error('Bu kart zaten seçildi');
+        const deck = deriveDeck(reading.seed, cardIds, reading.reversalsEnabled);
+        const drawn = {
+          positionKey: spread.positions[pickIndex].key,
+          cardId: deck.order[fanIndex],
+          reversed: deck.reversed[fanIndex],
+          fanIndex,
+        };
+        reading.cards.push(drawn);
+        if (reading.cards.length === spread.cardCount) reading.status = 'revealing';
+        save(list);
+        return wait({ positionKey: drawn.positionKey, card: cardView(drawn.cardId), reversed: drawn.reversed });
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
+
+    function reveal(readingId, positionKey) {
+      const list = load();
+      const reading = find(list, readingId);
+      const card = reading.cards.find((c) => c.positionKey === positionKey);
+      if (card && !card.revealedAt) { card.revealedAt = now().toISOString(); save(list); }
+      return wait(undefined);
+    }
+
+    function complete(readingId) {
+      const list = load();
+      const reading = find(list, readingId);
+      if (!reading.interpretation) {
+        reading.interpretation = interpret(reading, spreads.getSpread(reading.spreadId), cards);
+        save(list);
+      }
+      return wait(reading.interpretation);
+    }
+
+    // Yorum ekranı açılınca okuma tamamlanmış sayılır ve "Okumalarım"a girer.
+    function markViewed(readingId) {
+      const list = load();
+      const reading = find(list, readingId);
+      if (reading.status !== 'complete') {
+        reading.status = 'complete';
+        reading.completedAt = now().toISOString();
+        reading.cards.forEach((c) => { c.revealedAt = c.revealedAt || reading.completedAt; });
+        save(list);
+      }
+      return wait(publicReading(reading));
+    }
+
+    function abandon(readingId) {
+      const list = load();
+      const reading = find(list, readingId);
+      if (reading.status !== 'complete') { reading.status = 'abandoned'; save(list); }
+      return wait(undefined);
+    }
+
+    function get(readingId) {
+      return wait(publicReading(load().find((r) => r.id === readingId)));
+    }
+
+    function dailyToday() {
+      const uid = userId();
+      const date = localDate(now());
+      const reading = load().find((r) => r.spreadId === 'daily' && r.userId === uid && r.localDate === date && r.status !== 'abandoned');
+      return wait(publicReading(reading));
+    }
+
+    function draft() {
+      const list = load();
+      expireDrafts(list);
+      const drafts = list.filter((r) => r.status === 'revealing' || (r.status === 'picking' && r.cards.length > 0));
+      drafts.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return wait(publicReading(drafts[0]));
+    }
+
+    function listReadings(filter) {
+      const spreadId = filter && filter.spreadId;
+      const list = load().filter((r) => r.status === 'complete' && (!spreadId || r.spreadId === spreadId));
+      list.sort((a, b) => (b.completedAt || b.createdAt).localeCompare(a.completedAt || a.createdAt));
+      return wait(list.map(publicReading));
+    }
+
+    function patch(readingId, changes) {
+      const list = load();
+      const reading = find(list, readingId);
+      if (typeof changes.note === 'string') reading.note = changes.note.slice(0, 2000);
+      save(list);
+      return wait(undefined);
+    }
+
+    // Aynı açılım ve benzer soru 24 saat içinde sorulduysa yumuşak uyarı için.
+    function recentSimilar(spreadId, question) {
+      const t = now().getTime();
+      return load().some((r) => r.spreadId === spreadId && r.question && t - Date.parse(r.createdAt) < DAY && similarQuestions(r.question, question));
+    }
+
+    return { createReading, pick, reveal, complete, markViewed, abandon, get, dailyToday, draft, list: listReadings, patch, recentSimilar, publicReading, userId };
+  }
+
+  // Yanıt gelmezse aynı pickIndex ile üç kez daha dener; seçim idempotent olduğu için güvenli.
+  async function withRetry(task, attempts) {
+    let lastError;
+    for (let i = 0; i < (attempts || 3); i++) {
+      try { return await task(); } catch (error) {
+        lastError = error;
+        if (/zaten|Geçersiz|bulunamadı/.test(error.message)) break;
+      }
+    }
+    throw lastError;
+  }
+
+  // ---------- Kodda hesaplanan sinyaller ----------
+
+  const SIGN_ELEMENT = {
+    'Koç': 'Ateş', 'Aslan': 'Ateş', 'Yay': 'Ateş', 'Boğa': 'Toprak', 'Başak': 'Toprak', 'Oğlak': 'Toprak',
+    'İkizler': 'Hava', 'Terazi': 'Hava', 'Kova': 'Hava', 'Yengeç': 'Su', 'Akrep': 'Su', 'Balık': 'Su',
+    'Merkür': 'Hava', 'Ay': 'Su', 'Venüs': 'Toprak', 'Jüpiter': 'Ateş', 'Mars': 'Ateş', 'Güneş': 'Ateş', 'Satürn': 'Toprak',
+  };
+  const ELEMENTS = ['Ateş', 'Su', 'Hava', 'Toprak'];
+  const ELEMENT_AREA = { 'Ateş': 'tutku, irade ve harekete geçme', 'Su': 'duygular ve ilişkiler', 'Hava': 'düşünceler, iletişim ve kararlar', 'Toprak': 'para, iş, beden ve somut sonuçlar' };
+
+  function elementOf(card) {
+    if (card.arcana === 'minor') return card.element;
+    const astro = card.astrology || '';
+    if (astro.includes('/')) return astro.split('/')[1].trim();
+    return SIGN_ELEMENT[astro.trim()] || null;
+  }
+
+  function signals(drawn, cards) {
+    const list = drawn.map((d) => ({ ...d, card: cards.getCard(d.cardId) }));
+    const n = list.length;
+    const majors = list.filter((d) => d.card.arcana === 'major').length;
+    const reversed = list.filter((d) => d.reversed).length;
+    const counts = Object.fromEntries(ELEMENTS.map((e) => [e, 0]));
+    list.forEach((d) => { const e = elementOf(d.card); if (e) counts[e]++; });
+    const sorted = ELEMENTS.slice().sort((a, b) => counts[b] - counts[a]);
+    const dominant = counts[sorted[0]] > counts[sorted[1]] ? sorted[0] : null;
+    const missing = n >= 5 ? ELEMENTS.filter((e) => counts[e] === 0) : [];
+    const ranks = {};
+    list.filter((d) => d.card.arcana === 'minor').forEach((d) => { ranks[d.card.rank] = (ranks[d.card.rank] || 0) + 1; });
+    const repeated = Object.entries(ranks).filter(([, c]) => c >= 2).map(([rank, count]) => ({ rank: Number(rank), count }));
+    return { majorRatio: n ? majors / n : 0, reversedRatio: n ? reversed / n : 0, elements: counts, dominant, missing, repeated };
+  }
+
+  // ---------- Bağlamsal yorum (cme-0.1 planı → şablon cümle) ----------
+
+  const lower = (text) => text.charAt(0).toLocaleLowerCase('tr') + text.slice(1);
+  const trimDot = (text) => text.replace(/[.\s]+$/, '');
+  const wordCount = (text) => text.trim().split(/\s+/).filter(Boolean).length;
+
+  function motor() {
+    if (root.TAROT_ENGINE) return root.TAROT_ENGINE;
+    return require('./yorum-motoru.js');
+  }
+
+  const COURT_TO_ENGINE = { 11: 'page', 12: 'knight', 13: 'queen', 14: 'king' };
+  const ENGINE_TO_COURT = { page: '11', knight: '12', queen: '13', king: '14' };
+  const SPREAD_INTENT = { daily: 'advice', three: 'general', relationship: 'love', decision: 'decision', career: 'work', celtic: 'general' };
+
+  function toEngineId(appId) {
+    if (appId.startsWith('major-')) return 'major-' + Number(appId.slice(6));
+    const dash = appId.lastIndexOf('-');
+    const suit = appId.slice(0, dash);
+    const n = Number(appId.slice(dash + 1));
+    return n > 10 ? `${suit}-${COURT_TO_ENGINE[n]}` : `${suit}-${n}`;
+  }
+
+  function fromEngineId(engineId) {
+    if (engineId.startsWith('major-')) return 'major-' + String(Number(engineId.slice(6))).padStart(2, '0');
+    const dash = engineId.indexOf('-');
+    const suit = engineId.slice(0, dash);
+    const rest = engineId.slice(dash + 1);
+    if (ENGINE_TO_COURT[rest]) return `${suit}-${ENGINE_TO_COURT[rest]}`;
+    return `${suit}-${String(Number(rest)).padStart(2, '0')}`;
+  }
+
+  function displayLabel(position, reading) {
+    const a = reading.optionA || 'A';
+    const b = reading.optionB || 'B';
+    switch (position.key) {
+      case 'other': return reading.personName || position.label;
+      case 'a_path': return reading.optionA ? `${a} · yol` : position.label;
+      case 'a_outcome': return reading.optionA ? `${a} · sonuç` : position.label;
+      case 'b_path': return reading.optionB ? `${b} · yol` : position.label;
+      case 'b_outcome': return reading.optionB ? `${b} · sonuç` : position.label;
+      default: return position.label;
+    }
+  }
+
+  function displayPrompt(position, reading) {
+    let prompt = position.prompt;
+    if (reading.optionA) prompt = prompt.replace(/\bA'yı\b/, `"${reading.optionA}" yolunu`).replace(/\bA seçeneği\b/, `"${reading.optionA}"`);
+    if (reading.optionB) prompt = prompt.replace(/\bB'yi\b/, `"${reading.optionB}" yolunu`).replace(/\bB seçeneği\b/, `"${reading.optionB}"`);
+    return prompt;
+  }
+
+  function keywordsOf(card, reversed, cardsApi) {
+    if (card.arcana === 'minor' && !card.court) {
+      const suit = cardsApi.SUITS[card.suit];
+      return [...card.keywords, ...suit.area.split(', ')].slice(0, 3);
+    }
+    return card.keywords.slice(0, 3);
+  }
+
+  const POSITION_FRAMES = {
+    past: 'Bu pozisyon bugünü hazırlayan etkileri anlatır.',
+    present: 'Bu pozisyon şu anın enerjisini anlatır.',
+    future: 'Bu pozisyon mevcut gidişatın eğilimini anlatır; kesin bir sonuç değil, bir yöndür.',
+    self: 'Bu pozisyon senin bu konuya getirdiğin enerjiyi ve tutumu anlatır.',
+    other: 'Bu pozisyon karşı tarafın ilişkiye taşıdığı enerjiyi anlatır.',
+    bond: 'Bu pozisyon aranızdaki bağın şu anki doğasını anlatır.',
+    obstacle: 'Bu pozisyon önündeki zorluğu, aşılması gereken eşiği anlatır.',
+    potential: 'Bu pozisyon en iyi ihtimalle açılabilecek yolu anlatır.',
+    situation: 'Bu pozisyon kararın özünü ve şu anki tabloyu anlatır.',
+    a_path: 'Bu pozisyon ilk yolu seçersen sürecin nasıl akabileceğini anlatır.',
+    a_outcome: 'Bu pozisyon ilk yolun nereye varma eğiliminde olduğunu anlatır.',
+    b_path: 'Bu pozisyon ikinci yolu seçersen sürecin nasıl akabileceğini anlatır.',
+    b_outcome: 'Bu pozisyon ikinci yolun nereye varma eğiliminde olduğunu anlatır.',
+    current: 'Bu pozisyon işte ya da parada şu an olanı anlatır.',
+    strength: 'Bu pozisyon dayanabileceğin gücü anlatır.',
+    advice: 'Bu pozisyon atabileceğin adımı, kartların tavsiyesini anlatır.',
+    outcome: 'Bu pozisyon bu yolda devam edersen varılabilecek yeri anlatır.',
+    challenge: 'Bu pozisyon duruma karışan gücü, kesişen engeli anlatır.',
+    crown: 'Bu pozisyon bilinçli hedefini, ulaşılabilecek en iyi sonucu anlatır.',
+    root: 'Bu pozisyon durumun altındaki kök sebebi anlatır.',
+    environment: 'Bu pozisyon çevrendeki insanları ve dış etkileri anlatır.',
+    hopes_fears: 'Bu pozisyon umutlarını ve korkularını birlikte anlatır.',
+  };
+
+  const QUAL_TR = { hot: 'sıcak', cold: 'soğuk', wet: 'nemli', dry: 'kuru' };
+  const ARC_SENTENCE = {
+    ascending: 'Hikâye yükselen bir eğri çiziyor; baştaki yük sona doğru hafifliyor.',
+    descending: 'Hikâye alçalan bir eğri çiziyor; başlangıçtaki açıklık sona doğru daralıyor.',
+    V: 'Hikâye bir çukurdan geçiyor: ortada bir sarsıntı, ardından toparlanma var.',
+    lambda: 'Hikâye bir tepe yapıp iniyor; ortadaki yükseliş sonda yeniden sınanıyor.',
+    flat: 'Hikâyenin tonu düz; kartlar birbirini sertçe yükseltmiyor ya da düşürmüyor.',
+    oscillating: 'Hikâye dalgalı; aydınlık ve gölge sırayla yer değiştiriyor.',
+  };
+  const ARC_SHORT = {
+    ascending: 'yükselen', descending: 'alçalan', V: 'çukurdan geçip toparlanan',
+    lambda: 'tepe yapıp inen', flat: 'düz', oscillating: 'dalgalı',
+  };
+  const BALANCE_SHORT = { heavy: 'ağır', mixed: 'karışık', bright: 'parlak' };
+  const REL_SENTENCE = {
+    amplify: (a, b) => `${a}, ${b} ile aynı yönde güçleniyor.`,
+    intensify: (a, b) => `${a} ile ${b} birlikte ağırlığı artırıyor.`,
+    erode: (a, b) => `${a}, ${b} tarafındaki yükü hafifletiyor.`,
+    resolve: (a, b) => `${a}, ${b} ile gelen zorluğun ardından bir çıkış gösteriyor.`,
+    color: (a, b) => `${a}, ${b} kartına yalnızca bir renk katıyor.`,
+  };
+
+  function firstSentence(text) {
+    const match = String(text).match(/^.*?[.!?](?:\s|$)/);
+    return (match ? match[0] : text).trim();
+  }
+
+  function cardLabel(card, reversed) {
+    return `${card.nameTr}${reversed ? ' (ters)' : ''}`;
+  }
+
+  function volumeSentence(ctx, nameOf) {
+    if (!ctx.volume.from.length) return '';
+    if (ctx.volume.cancelled) return 'İki yanındaki kart birbirine karşıt geldiği için bu kart temiz okunuyor; komşular birbirinin etkisini götürüyor.';
+    const names = ctx.volume.from.map((item) => nameOf(item.key));
+    const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} ve ${names[names.length - 1]}`;
+    if (ctx.volume.band === 'very_loud') return `${who} bu enerjiyi çok yükseltiyor; kart burada yüksek sesle konuşuyor.`;
+    if (ctx.volume.band === 'loud') return `${who} bu enerjiyi belirginleştiriyor; kart bu pozisyonda öne çıkıyor.`;
+    if (ctx.volume.band === 'quiet') return `${who} bu kartın sesini kısıyor; anlam duruyor, daha kısık duyuluyor.`;
+    if (ctx.volume.band === 'muffled') return `${who} bu enerjiyi bastırıyor; kaybolmuyor, yalnızca zor duyuluyor.`;
+    return `${who} yanında dengeli duruyor; enerji ne bastırılıyor ne de abartılıyor.`;
+  }
+
+  // Her yer kendi fiilini kullanır. Aynı kart başka koltuğa geçince cümle de değişir.
+  const PLACE_ANSWER = {
+    today: (n, kw, gist) => `${n} günün tek yerinde. Bugün bakılacak nokta ${kw}: ${gist}`,
+    past: (n, kw, gist) => `${n} geçmişin yerinde. Buraya gelmeni hazırlayan etki ${kw}: ${gist}`,
+    present: (n, kw, gist) => `${n} şimdinin yerinde. Olup bitenin kendisi ${kw}: ${gist}`,
+    future: (n, kw, gist) => `${n} geleceğin yerinde. Bu bir hüküm değil; gidişat ${kw} yönüne eğiliyor: ${gist}`,
+    self: (n, kw, gist) => `${n} senin yerinde. Bu konuya sen ${kw} getiriyorsun: ${gist}`,
+    other: (n, kw, gist) => `${n} karşı tarafın yerinde. Ne düşündüğünü söylemez; ilişkiye ${kw} taşıdığını anlatır: ${gist}`,
+    bond: (n, kw, gist) => `${n} bağın yerinde. Aranızdaki şeyin doğası ${kw}: ${gist}`,
+    obstacle: (n, kw, gist) => `${n} engelin yerinde. ${kw} burada yolu açmıyor, eşiği kuruyor: ${gist}`,
+    potential: (n, kw, gist) => `${n} potansiyelin yerinde. En iyi ihtimal ${kw} tarafına açılıyor: ${gist}`,
+    situation: (n, kw, gist) => `${n} durumun yerinde. Kararın özü ${kw}: ${gist}`,
+    a_path: (n, kw, gist) => `${n} ilk yolun yerinde. Bu yol seçilirse süreç ${kw} ile yürür: ${gist}`,
+    a_outcome: (n, kw, gist) => `${n} ilk yolun varış yerinde. Bu bir hüküm değil; eğilim ${kw}: ${gist}`,
+    b_path: (n, kw, gist) => `${n} ikinci yolun yerinde. Bu yol seçilirse süreç ${kw} ile yürür: ${gist}`,
+    b_outcome: (n, kw, gist) => `${n} ikinci yolun varış yerinde. Bu bir hüküm değil; eğilim ${kw}: ${gist}`,
+    current: (n, kw, gist) => `${n} mevcut durumun yerinde. İşte ya da parada şimdi ${kw} var: ${gist}`,
+    strength: (n, kw, gist) => `${n} gücün yerinde. Dayanabileceğin şey ${kw}: ${gist}`,
+    advice: (n, kw, gist) => `${n} tavsiyenin yerinde. Atılacak adım ${kw} tarafında: ${gist}`,
+    outcome: (n, kw, gist) => `${n} gidişatın yerinde. Devam eden yön ${kw} tarafına eğiliyor: ${gist}`,
+    challenge: (n, kw, gist) => `${n} kesen kartın yerinde. Duruma karışan güç ${kw}: ${gist}`,
+    crown: (n, kw, gist) => `${n} hedefin yerinde. Bilinçli olarak uzanılan şey ${kw}: ${gist}`,
+    root: (n, kw, gist) => `${n} kökün yerinde. Altta duran sebep ${kw}: ${gist}`,
+    environment: (n, kw, gist) => `${n} çevrenin yerinde. Dışarıdan gelen etki ${kw}: ${gist}`,
+    hopes_fears: (n, kw, gist) => `${n} umut ile korkunun yerinde. İkisi birden ${kw} içinden konuşuyor: ${gist}`,
+  };
+
+  function placedClaim(position, card, drawn, cardsApi) {
+    const kw = keywordsOf(card, drawn.reversed, cardsApi).map((item) => lower(item)).join(', ');
+    const name = cardLabel(card, drawn.reversed);
+    const gist = trimDot(firstSentence(drawn.reversed ? card.reversed : card.upright));
+    const answer = PLACE_ANSWER[position.key] || ((n, themes, body) => `${n} bu yerde ${themes} anlatıyor: ${body}`);
+    const text = answer(name, kw, gist);
+    return /[.!?]$/.test(text) ? text : `${text}.`;
+  }
+
+  function positionText(position, drawn, reading, spread, cardsApi, plan, nameOf) {
+    const card = cardsApi.getCard(drawn.cardId);
+    const ctx = plan.positions.find((item) => item.key === position.key);
+    const claim = placedClaim(position, card, drawn, cardsApi);
+    const shortClaim = placedClaim(position, card, drawn, cardsApi).replace(/:.*$/, '.');
+    const volume = volumeSentence(ctx, nameOf);
+    const links = plan.surface.links
+      .filter((link) => link.from === position.key)
+      .map((link) => REL_SENTENCE[link.relation](nameOf(position.key), nameOf(link.with)));
+    const hedge = 'Bunu kesin bir hüküm olarak değil, üzerine düşünebileceğin bir eğilim olarak al.';
+    const optional = [];
+    if (ctx.qualityTilt) {
+      const bits = Object.keys(ctx.qualityTilt).map((key) => QUAL_TR[key]).filter(Boolean);
+      if (bits.length) optional.push(`Yanlardan gelen nitelik ${bits.join(' ve ')} bir tona çekiyor.`);
+    }
+    if (drawn.reversed) optional.push('Ters durduğu için bu yerde anlam gecikmeli ya da içe dönük yaşanıyor; düz anlam silinmiyor.');
+    if (card.arcana === 'minor') {
+      const suit = cardsApi.SUITS[card.suit];
+      optional.push(`${suit.nameTr} (${suit.element}) bu yeri ${lower(suit.area)} alanına bağlıyor.`);
+    } else if (card.loveWork && (spread.id === 'relationship' || spread.id === 'career')) {
+      optional.push(card.loveWork);
+    } else if (!drawn.reversed) {
+      optional.push('Bu bir Major Arcana kartı; bu yerde konu gündelik bir ayrıntıdan çok daha geniş bir döngüye işaret ediyor.');
+    }
+    optional.push(`Bu yerin sorusu şu: ${displayPrompt(position, reading)}`);
+    if (reading.question && position.index === 1) optional.push('Sorunla birlikte okununca bu yer, konunun nereden beslendiğine dair bir ipucu veriyor.');
+
+    const build = (body, extras) => [body, volume, ...links, ...extras, hedge].filter(Boolean).join(' ');
+    let extras = optional.slice();
+    let text = build(claim, extras);
+    while (wordCount(text) > 140 && extras.length) {
+      extras.pop();
+      text = build(claim, extras);
+    }
+    if (wordCount(text) > 140) text = build(shortClaim, []);
+    const pads = [
+      'Yer değişirse aynı kart başka bir soruya cevap verir.',
+      'Komşular bu koltuğun sesini değiştirir; kartın oturduğu yer sorunun kendisidir.',
+      'Bu yüzden kartı yerinden ayırıp tek başına okumak, açılımın söylediğini eksik bırakır.',
+    ];
+    for (const pad of pads) {
+      if (wordCount(text) >= 60) break;
+      text = `${text} ${pad}`;
+    }
+    return text;
+  }
+
+  function dailyText(drawn, cardsApi) {
+    const card = cardsApi.getCard(drawn.cardId);
+    const kw = card.keywords.slice(0, 3).map(lower);
+    const meaning = drawn.reversed ? card.reversed : card.upright;
+    const context = card.arcana === 'minor'
+      ? `${cardsApi.SUITS[card.suit].nameTr} (${card.element}) bugünü ${lower(cardsApi.SUITS[card.suit].area)} alanına bağlıyor.`
+      : 'Bir Major Arcana kartı olarak günün temasının sıradan bir ayrıntıdan daha büyük olduğunu hatırlatıyor.';
+    return {
+      summary: `Bugünün kartı ${card.name} (${card.nameTr})${drawn.reversed ? ', ters' : ''}. Günün tavsiyesi: ${kw[0]} üzerine düşün ve ${kw[1] || kw[0]} için küçük de olsa bir alan aç.`,
+      text: `Bugünün teması ${card.name} (${card.nameTr}). ${meaning} ${context} ${drawn.reversed ? 'Kart ters geldiği için bugün bu enerji biraz içe dönük ya da gecikmeli akıyor olabilir; zorlamak yerine fark etmek yeterli.' : 'Bugün bu enerji sana açık bir kapı gibi duruyor.'} Gün boyunca ${kw.join(', ')} temalarının nerede karşına çıktığına dikkat et. Akşam kendine şunu sorabilirsin: Bugün hangi anda bu kartın sesini duydum? Kart bir kehanet değil; günün içinde nereye bakacağını gösteren küçük bir işaret.`,
+    };
+  }
+
+  function headlineSentence(id, global, cardsApi) {
+    const elTr = motor().EL_TR;
+    if (id === 'majorWeight') return `Major Arcana ağırlıkta; ${global.major.count} büyük arkana kartı, konunun gündelik bir ayrıntıdan daha geniş bir döngüye bağlandığını gösteriyor.`;
+    if (id === 'majorAbsent') return 'Hiç Major Arcana yok; konu gündelik ve büyük ölçüde senin elinde.';
+    if (id === 'courtDensity') return `${global.courts.count} saray kartı var; burada kişiler, roller ya da bir haber öne çıkıyor.`;
+    if (id === 'dominantElement') {
+      const name = elTr[global.dominantElement.el];
+      return `Baskın element ${name}: asıl konu ${ELEMENT_AREA[name]} alanında dönüyor.`;
+    }
+    if (id === 'missingElement') {
+      const names = global.missingElement.els.map((el) => elTr[el]);
+      return `${names.join(' ve ')} hiç yok; ${names.map((name) => ELEMENT_AREA[name]).join(' ile ')} tarafı ihmal ediliyor olabilir.`;
+    }
+    if (id === 'reversalRatio') {
+      return global.reversal.lean === 'reversed'
+        ? 'Kartların çoğu ters; bu bir tıkanıklığa ya da içe dönük bir döneme işaret ediyor.'
+        : 'Kartların çoğu düz; enerji dışarıya, görünen eyleme dönük akıyor.';
+    }
+    if (id === 'valenceBalance') {
+      if (global.valence.balance === 'heavy') return 'Genel ton ağır: kartlar zorlanan, sıkışan bir dönemi anlatıyor.';
+      if (global.valence.balance === 'bright') return 'Genel ton parlak: kartlar açılan, desteklenen bir dönemi anlatıyor.';
+      return 'Genel ton karışık: aydınlık ve gölge aynı okumada yan yana duruyor.';
+    }
+    if (id === 'valenceArc') return ARC_SENTENCE[global.valence.arc];
+    return '';
+  }
+
+  function placementSentence(spread, reading, cardsApi) {
+    const seats = spread.positions.map((position) => {
+      const drawn = reading.cards.find((card) => card.positionKey === position.key);
+      const card = cardsApi.getCard(drawn.cardId);
+      return `${displayLabel(position, reading)}: ${cardLabel(card, drawn.reversed)}`;
+    });
+    return `${seats.join(', ')}.`;
+  }
+
+  function loudestSentence(plan, spread, reading, cardsApi) {
+    const top = plan.positions.slice().sort((a, b) => b.salience - a.salience)[0];
+    const position = spread.positions.find((item) => item.key === top.key);
+    const drawn = reading.cards.find((card) => card.positionKey === top.key);
+    const name = cardLabel(cardsApi.getCard(drawn.cardId), drawn.reversed);
+    const label = displayLabel(position, reading);
+    if (top.volume.cancelled) return `${label} yerindeki ${name} temiz okunuyor, çünkü yanları birbirini götürüyor.`;
+    const voice = {
+      very_loud: 'en yüksek sesle konuşuyor',
+      loud: 'öne çıkıyor',
+      normal: 'komşularıyla dengede duruyor',
+      quiet: 'kısık kalıyor',
+      muffled: 'bastırılmış duyuluyor',
+    }[top.volume.band];
+    return `${label} yerindeki ${name} bu açılımda ${voice}.`;
+  }
+
+  function summaryFromPlan(plan, spread, reading, cardsApi) {
+    const lines = [placementSentence(spread, reading, cardsApi)];
+    const head = headlineSentence(plan.global.headline[0], plan.global, cardsApi);
+    if (head) lines.push(head);
+    if (lines.length < 3) lines.push(loudestSentence(plan, spread, reading, cardsApi));
+    if (lines.length < 2) lines.push(ARC_SENTENCE[plan.global.valence.arc]);
+    return lines.slice(0, 3).join(' ');
+  }
+
+  function celticMore(reading, cardsApi, plan) {
+    const byKey = Object.fromEntries(reading.cards.map((d) => [d.positionKey, cardsApi.getCard(d.cardId)]));
+    const rankName = { ace: 'As', two: 'İkili', three: 'Üçlü', four: 'Dörtlü', five: 'Beşli', six: 'Altılı', seven: 'Yedili', eight: 'Sekizli', nine: 'Dokuzlu', ten: 'Onlu', page: 'Prens', knight: 'Şövalye', queen: 'Kraliçe', king: 'Kral' };
+    const repeated = plan.global.rank.repeated.length
+      ? ` Tekrar eden ${plan.global.rank.repeated.map((rank) => rankName[rank] || rank).join(', ')} bu temaları güçlendiriyor.`
+      : '';
+    const arcs = plan.global.valence.arcs;
+    const timeArc = arcs[0] ? ` Zaman çizgisi ${ARC_SHORT[arcs[0].arc]} bir seyir çiziyor.` : '';
+    const staffArc = arcs[1] ? ` Sağdaki sütun ${ARC_SHORT[arcs[1].arc]} bir seyir çiziyor.` : '';
+    const essence = plan.global.essenceCard
+      ? ` Sayıların özü ${cardsApi.getCard(fromEngineId(plan.global.essenceCard)).nameTr} kartında toplanıyor.`
+      : '';
+    return `Haçın kalbinde ${byKey.present.nameTr} ile ${byKey.challenge.nameTr} karşılaşıyor: durumu belirleyen enerji ile ona karışan güç aynı anda çalışıyor. Sağdaki sütun ${byKey.self.nameTr} ile senden başlayıp ${byKey.outcome.nameTr} ile sonuca uzanıyor; aradaki ${byKey.environment.nameTr} ve ${byKey.hopes_fears.nameTr} kartları, çevrenin ve iç sesinin bu yolu nasıl renklendirdiğini gösteriyor.${timeArc}${staffArc}${essence}${repeated}`;
+  }
+
+  function echoNote(a, b, echoes) {
+    const hit = echoes.find((line) => {
+      const pair = line.split(':')[0];
+      return pair.includes(a) && pair.includes(b);
+    });
+    if (!hit) return '';
+    if (hit.includes('aynı element')) return ' İkisi aynı enerjiyi paylaşıyor.';
+    if (hit.includes('karşıt elementler')) return ' Biri diğerine karşıt bir enerji taşıyor.';
+    if (hit.includes('aynı rank')) return ' Aynı basamaktan geldikleri için tema tekrar ediyor.';
+    return '';
+  }
+
+  const PAIR_FRAMES = {
+    'present|challenge': (a, b) => `Durumun kalbinde ${a} var; ${b} ise buna karışan güç. İkisi birlikte, neyin seni meşgul ettiğini ve neyin önüne çıktığını yan yana koyuyor.`,
+    'crown|root': (a, b) => `Bilinçli hedefin ${a} ile görünüyor, kök sebep ise ${b}. Hedef ile temel arasındaki mesafe, zorlanmanın nereden geldiğini anlatıyor.`,
+    'past|future': (a, b) => `${a} geride kalan etki, ${b} yakında gelen. Bu çift, bir kapının kapanıp diğerinin aralanışını gösteriyor.`,
+    'self|environment': (a, b) => `Senin tutumun ${a}, çevrenin etkisi ${b}. İçeriden ve dışarıdan gelen bu iki ses aynı yöne mi bakıyor, bunu tartabilirsin.`,
+    'hopes_fears|outcome': (a, b) => `Umutların ve korkuların ${a} ile, gidişat ${b} ile beliriyor. Beklentin sonucu nasıl şekillendiriyor, bu çift ona dair bir ipucu veriyor.`,
+  };
+
+  function buildReadingPlan(reading, spread) {
+    const engine = motor();
+    const layout = engine.layoutById(spread.id);
+    if (!layout) throw new Error('Açılım grafı yok: ' + spread.id);
+    const draw = spread.positions.map((position) => {
+      const drawn = reading.cards.find((card) => card.positionKey === position.key);
+      return { cardId: toEngineId(drawn.cardId), reversed: !!drawn.reversed };
+    });
+    return JSON.parse(JSON.stringify(engine.buildPlan(layout, draw, {
+      valence: engine.DOC_VALENCE,
+      intent: SPREAD_INTENT[spread.id] || 'general',
+      config: { reversals: reading.reversalsEnabled !== false },
+    })));
+  }
+
+  function interpret(reading, spread, cardsApi) {
+    const plan = buildReadingPlan(reading, spread);
+    if (spread.id === 'daily') {
+      const d = dailyText(reading.cards[0], cardsApi);
+      return { summary: d.summary, positions: [{ positionKey: 'today', text: d.text }], source: 'template', engineVersion: plan.engineVersion, plan };
+    }
+    const byKey = Object.fromEntries(reading.cards.map((card) => [card.positionKey, card]));
+    const nameOf = (key) => cardLabel(cardsApi.getCard(byKey[key].cardId), byKey[key].reversed);
+    const result = {
+      summary: summaryFromPlan(plan, spread, reading, cardsApi),
+      positions: spread.positions.map((position) => ({
+        positionKey: position.key,
+        text: positionText(position, byKey[position.key], reading, spread, cardsApi, plan, nameOf),
+      })),
+      signals: signals(reading.cards, cardsApi),
+      source: 'template',
+      engineVersion: plan.engineVersion,
+      plan,
+    };
+    if (spread.id === 'celtic') {
+      result.summaryMore = celticMore(reading, cardsApi, plan);
+      result.pairs = [['present', 'challenge'], ['crown', 'root'], ['past', 'future'], ['self', 'environment'], ['hopes_fears', 'outcome']]
+        .map((keys) => ({ keys, text: PAIR_FRAMES[keys.join('|')](nameOf(keys[0]), nameOf(keys[1])) + echoNote(keys[0], keys[1], plan.surface.echoes) }));
+    }
+    if (spread.id === 'decision') {
+      const side = (pathKey, outcomeKey, option) => {
+        const path = byKey[pathKey];
+        const outcome = byKey[outcomeKey];
+        const pc = cardsApi.getCard(path.cardId);
+        const oc = cardsApi.getCard(outcome.cardId);
+        const gain = [path, outcome].filter((card) => !card.reversed).map((card) => lower(cardsApi.getCard(card.cardId).keywords[0]));
+        const cost = [path, outcome].filter((card) => card.reversed).map((card) => lower(trimDot(cardsApi.getCard(card.cardId).reversed.split('.')[0])));
+        const arc = plan.global.valence.arcs.find((item) => item.keys.includes(pathKey) && item.keys.includes(outcomeKey));
+        const pathCtx = plan.positions.find((item) => item.key === pathKey);
+        const voice = pathCtx.volume.cancelled
+          ? 'Yolun ortasındaki kart temiz okunuyor, çünkü yanları birbirine karşıt.'
+          : `Bu yolun sesi ${pathCtx.volume.band === 'quiet' || pathCtx.volume.band === 'muffled' ? 'kısık' : pathCtx.volume.band === 'very_loud' || pathCtx.volume.band === 'loud' ? 'yüksek' : 'dengede'}.`;
+        const curve = arc ? ` Eğrisi ${ARC_SHORT[arc.arc]}, tonu ${BALANCE_SHORT[arc.balance]}.` : '';
+        return `${option}: süreç ${pc.nameTr}${path.reversed ? ' (ters)' : ''}, varış ${oc.nameTr}${outcome.reversed ? ' (ters)' : ''}. `
+          + (gain.length ? `Getirisi ${gain.join(' ve ')} yönünde. ` : 'Bu yolun getirisi hemen görünmüyor; sabır istiyor. ')
+          + (cost.length ? `Bedeli: ${cost.join('; ')}. ` : `Bedeli, ${lower(pc.keywords[pc.keywords.length - 1])} temasının getirdiği sorumluluk. `)
+          + voice + curve;
+      };
+      result.comparison = {
+        a: side('a_path', 'a_outcome', reading.optionA || 'A'),
+        b: side('b_path', 'b_outcome', reading.optionB || 'B'),
+        note: 'Kartlar hangi yolu seçmen gerektiğini söylemez; iki yolun getirisini ve bedelini yan yana koyar. Hangisinin sana daha çok benzediğine sen karar verirsin.',
+      };
+    }
+    return result;
+  }
+
+  const api = { createRng, randomSeed, deriveDeck, localDate, isCrisis, similarQuestions, createService, withRetry, signals, elementOf, interpret, displayLabel, displayPrompt, keywordsOf, memoryStorage };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  root.TAROT_READING = api;
+})(typeof window !== 'undefined' ? window : globalThis);
