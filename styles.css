@@ -220,7 +220,30 @@ button.lay-card:focus-visible{outline:3px solid var(--cobalt);outline-offset:4px
 .lay-slot.is-leaving{pointer-events:none}
 
 /* ---------- 3 · Soru ---------- */
-.question-step{height:100%;max-width:720px;display:flex;flex-direction:column;justify-content:center;gap:16px}
+.question-step{height:100%;max-width:680px;margin:0 auto;display:flex;flex-direction:column;justify-content:center;gap:14px}
+.question-altar{display:flex;justify-content:center;animation:fade-up .4s ease-out both}
+.question-deck{position:relative;width:196px;height:136px}
+.question-deck .card-back{position:absolute;left:62px;top:10px;width:72px;height:116px;border-radius:8px;box-shadow:0 12px 20px #321f4b33}
+.question-deck .card-back:nth-child(1){transform:translate(-52px,10px) rotate(-16deg)}
+.question-deck .card-back:nth-child(2){transform:translate(52px,10px) rotate(16deg)}
+.question-deck .card-back:nth-child(3){z-index:1;transform:translateY(-2px)}
+.question-invite{margin:0;text-align:center;font-family:TarotDisplay,Georgia,serif;font-style:italic;font-weight:500;font-size:22px;line-height:1.35;letter-spacing:-.015em;color:#303d88;text-wrap:balance;animation:fade-up .4s ease-out .05s both}
+.question-paper{position:relative;padding:18px 22px 14px;border:1px solid #d6b571;border-radius:18px;background:linear-gradient(180deg,#fffaf0,#f8efd8);box-shadow:0 1px 0 #fff inset,0 16px 34px #6b4f1c14;animation:fade-up .4s ease-out .1s both}
+.question-paper::before{content:'';position:absolute;inset:7px;border:1px solid #e4d0a2;border-radius:12px;pointer-events:none}
+.question-paper:focus-within{border-color:#c4923a;box-shadow:0 1px 0 #fff inset,0 16px 34px #6b4f1c1c,0 0 0 3px #cfa24e33}
+.question-step .field>span:first-child{font-size:11px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:#8a6424}
+.question-step .field textarea,.question-step .field input{background:transparent;border:0;border-radius:0;box-shadow:none}
+.question-step .field textarea{min-height:112px;padding:8px 4px 2px;font-style:italic;font-weight:520}
+.question-step .field input{padding:6px 2px 2px;font-family:TarotDisplay,Georgia,serif;font-size:22px;font-weight:560}
+.question-step .option-plate{padding:14px 16px 10px;border:1px solid #d6b571;border-radius:16px;background:#fdf8eb;box-shadow:0 1px 0 #fff inset,0 8px 18px #6b4f1c10}
+.question-step .option-plate:focus-within{border-color:#c4923a;box-shadow:0 1px 0 #fff inset,0 0 0 3px #cfa24e33}
+.question-step .person-field{margin-top:8px;padding-top:10px;border-top:1px solid #e4d0a2}
+.question-step:has(.option-row){gap:10px}
+.question-step:has(.option-row) .question-altar{transform:scale(.78);transform-origin:center top;margin-bottom:-22px}
+.question-step:has(.option-row) .question-invite{font-size:18px}
+.question-step:has(.option-row) .field textarea{min-height:72px}
+.question-step .hint{text-align:center}
+.no-enter .question-altar,.no-enter .question-invite,.no-enter .question-paper{animation:none}
 .field{position:relative;display:flex;flex-direction:column;gap:6px;font-size:15px;color:#514167}
 .field>span:first-child{font-weight:600;letter-spacing:.2px}
 .field input,.field textarea,.field select{width:100%;font-size:17px;color:var(--ink);background:linear-gradient(120deg,#f0edf5,#eeecf4);border:1px solid #d9d5e5;border-radius:12px;padding:12px 16px;resize:none}
@@ -280,6 +303,10 @@ button.lay-card:focus-visible{outline:3px solid var(--cobalt);outline-offset:4px
 .fade-up{animation:fade-up .3s ease-out both;animation-delay:calc(var(--i,0) * 80ms)}
 .summary-card{padding:22px 26px;border:1px solid #d6b571;border-radius:16px;background:#fdf8ebf2}
 .summary-text{margin:10px 0 0;font-family:TarotDisplay,Georgia,serif;font-size:23px;font-weight:520;line-height:1.4;letter-spacing:-.015em;text-wrap:pretty}
+.closing-card{padding:22px 26px;border:1px solid #d6b571;border-radius:16px;background:#fdf8ebf2}
+.closing-text{margin:12px 0 0;max-width:68ch;font-family:TarotDisplay,Georgia,serif;font-size:19px;font-weight:460;line-height:1.7;letter-spacing:-.01em;text-wrap:pretty;white-space:pre-wrap}
+.closing-text:empty{display:none}
+.closing-status{margin:10px 0 0;font-family:TarotDisplay,Georgia,serif;font-style:italic;font-size:18px;line-height:1.45;color:#303d88}
 .summary-more{margin:12px 0 0;font-size:16px;line-height:1.65;color:#4a3d58}
 .position-cards{list-style:none;margin:16px 0 0;padding:0}
 .position-card{display:grid;grid-template-columns:92px 1fr;gap:22px;padding:22px 0;border-top:1px solid #ccaa6855}
@@ -482,7 +509,15 @@ input[role=switch]:focus-visible{outline:3px solid var(--cobalt);outline-offset:
   .position-index{width:24px;height:24px;font-size:12px}
   .position-list strong,.position-list:has(li:nth-child(6)) strong{font-size:14px}
   .position-list small{display:none}
-  .question-step{justify-content:flex-start;gap:12px;height:auto;min-height:100%}
+  .stage[data-step=question] .action-row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
+  .stage[data-step=question] .selection-status:empty{display:none}
+  .stage[data-step=question] .action-end{flex:1 0 100%;justify-content:flex-end}
+  .question-step{justify-content:flex-start;gap:10px;height:auto;min-height:100%;max-width:none}
+  .question-altar{transform:scale(.72);transform-origin:center top;margin-bottom:-28px}
+  .question-invite{font-size:16px}
+  .question-paper{padding:14px 14px 10px}
+  .question-step .field textarea{min-height:84px;font-size:17px}
+  .question-step .field input{font-size:18px}
   .field input,.field textarea{font-size:16px;padding:10px 12px}
   .field textarea{font-size:17px}
   .option-row{grid-template-columns:1fr;gap:12px}
@@ -502,7 +537,8 @@ input[role=switch]:focus-visible{outline:3px solid var(--cobalt);outline-offset:
   .lay-card-name{font-size:12.5px;line-height:15px}
   .lay-keywords{font-size:10.5px;line-height:13px}
   .reading-scroll{padding-right:4px}
-  .summary-card{padding:16px 16px}
+  .summary-card,.closing-card{padding:16px 16px}
+  .closing-text{font-size:17px}
   .summary-text{font-size:18px}
   .summary-more{font-size:15px}
   .position-card{grid-template-columns:62px 1fr;gap:14px;padding:18px 0}

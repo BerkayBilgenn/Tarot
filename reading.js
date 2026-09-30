@@ -299,13 +299,25 @@
       return wait(undefined);
     }
 
+    function saveClosing(readingId, text, source) {
+      const list = load();
+      const reading = find(list, readingId);
+      if (!reading.interpretation) return wait(null);
+      const closing = String(text || '').trim().slice(0, 8000);
+      reading.interpretation.closing = closing;
+      reading.interpretation.closingSource = source === 'template' ? 'template' : 'llm';
+      reading.interpretation.closingVoice = 'okuma-3';
+      save(list);
+      return wait(reading.interpretation);
+    }
+
     // Aynı açılım ve benzer soru 24 saat içinde sorulduysa yumuşak uyarı için.
     function recentSimilar(spreadId, question) {
       const t = now().getTime();
       return load().some((r) => r.spreadId === spreadId && r.question && t - Date.parse(r.createdAt) < DAY && similarQuestions(r.question, question));
     }
 
-    return { createReading, pick, reveal, complete, markViewed, abandon, get, dailyToday, draft, list: listReadings, patch, recentSimilar, publicReading, userId };
+    return { createReading, pick, reveal, complete, markViewed, abandon, get, dailyToday, draft, list: listReadings, patch, saveClosing, recentSimilar, publicReading, userId };
   }
 
   // Yanıt gelmezse aynı pickIndex ile üç kez daha dener; seçim idempotent olduğu için güvenli.
@@ -676,14 +688,20 @@
 
   function dailyText(drawn, cardsApi) {
     const card = cardsApi.getCard(drawn.cardId);
-    const kw = card.keywords.slice(0, 3).map(lower);
-    const meaning = drawn.reversed ? card.reversed : card.upright;
-    const context = card.arcana === 'minor'
-      ? `${cardsApi.SUITS[card.suit].nameTr} (${card.element}) bugünü ${lower(cardsApi.SUITS[card.suit].area)} alanına bağlıyor.`
-      : 'Bir Major Arcana kartı olarak günün temasının sıradan bir ayrıntıdan daha büyük olduğunu hatırlatıyor.';
+    const bits = String(drawn.reversed ? card.reversed : card.upright)
+      .split(/[,.]/)
+      .map((bit) => bit.replace(/\s+/g, ' ').trim())
+      .filter((bit) => bit.length > 2)
+      .slice(0, 3)
+      .map((bit) => bit.charAt(0).toLocaleLowerCase('tr') + bit.slice(1));
+    const focus = bits[0] || lower(card.keywords[0]);
+    const list = bits.length <= 1 ? focus : bits.length === 2 ? `${bits[0]} ya da ${bits[1]}` : `${bits.slice(0, -1).join(', ')} ya da ${bits[bits.length - 1]}`;
+    const turn = drawn.reversed
+      ? 'Ters geldiği için bugün bu tam açılmayabilir; bir gecikme ya da içine attığın bir hal olarak gelebilir.'
+      : 'Düz geldiği için bugün bu hal sana yakın durabilir.';
     return {
-      summary: `Bugünün kartı ${card.name} (${card.nameTr})${drawn.reversed ? ', ters' : ''}. Günün tavsiyesi: ${kw[0]} üzerine düşün ve ${kw[1] || kw[0]} için küçük de olsa bir alan aç.`,
-      text: `Bugünün teması ${card.name} (${card.nameTr}). ${meaning} ${context} ${drawn.reversed ? 'Kart ters geldiği için bugün bu enerji biraz içe dönük ya da gecikmeli akıyor olabilir; zorlamak yerine fark etmek yeterli.' : 'Bugün bu enerji sana açık bir kapı gibi duruyor.'} Gün boyunca ${kw.join(', ')} temalarının nerede karşına çıktığına dikkat et. Akşam kendine şunu sorabilirsin: Bugün hangi anda bu kartın sesini duydum? Kart bir kehanet değil; günün içinde nereye bakacağını gösteren küçük bir işaret.`,
+      summary: `Bugün ${card.nameTr} ile açılıyorsun. Gün, ${focus} etrafında dönebilir. ${drawn.reversed ? 'Enerji içe dönük ya da gecikmeli gelebilir.' : 'Bu enerji bugün görünür bir kapı gibi durabilir.'}`,
+      text: `Bugün sana ${card.nameTr} geldi. Gün, ${list || focus} etrafında dönebilir. ${turn} Gün içinde bu hal nerede belirirse, kart orada konuşuyor demektir. Bunu tek bir saate bağlama; günün herhangi bir anında çıkabilir. Akşama her şeyi bitirmek zorunda değilsin. Bugün bu hale küçük bir yer açman yeter. Acele bir hüküm kurma.`,
     };
   }
 

@@ -152,6 +152,19 @@ test('template interpretation follows the writing rules', async () => {
   }
 });
 
+test('a saved closing stays on the cached reading', async () => {
+  const { svc } = service();
+  const { readingId } = await svc.createReading({ spreadId: 'three', question: 'Neye dikkat etmeliyim?' });
+  for (let i = 0; i < 3; i++) await svc.pick(readingId, i, i);
+  const first = await svc.complete(readingId);
+  assert.equal(first.closing, undefined);
+  const saved = await svc.saveClosing(readingId, 'Kartlar bu dönemde yavaşlamayı işaret ediyor.');
+  assert.equal(saved.closingSource, 'llm');
+  assert.equal(saved.source, 'template');
+  assert.equal(saved.positions.length, 3);
+  assert.equal((await svc.complete(readingId)).closing, saved.closing);
+});
+
 test('contextual plan changes how the same cards are read', () => {
   const reading = {
     spreadId: 'three',

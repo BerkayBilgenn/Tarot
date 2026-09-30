@@ -13,6 +13,7 @@ const FLIP_MS = 600;
 const TAROT = window.TAROT_CARDS;
 const SPREADS = window.TAROT_SPREADS;
 const ENGINE = window.TAROT_READING;
+const ORACLE = window.TAROT_ORACLE;
 
 const INTENT_CARD = {
   today: 'major-19',
@@ -622,14 +623,19 @@ RENDERERS.question = () => {
   const counter = (id, max) => `<span class="counter" id="${id}-count" aria-live="off">${(state.inputs[id] || '').length} / ${max}</span>`;
   setHeading('Sorunu yaz', decision ? 'A ve B seçenekleri zorunlu' : 'İsteğe bağlı');
   setProgress('');
+  const deck = `<div class="question-altar" aria-hidden="true"><span class="question-deck" style="${cardBackVars(72, 116)}">${'<span class="card-back"></span>'.repeat(3)}</span></div>`;
   body.innerHTML = `<form class="question-step" id="question-form" novalidate>
+      ${deck}
+      <p class="question-invite">${decision ? 'İki yolu masaya koy. Sorunu onların arasına bırak.' : 'Bir nefes al. Sorunu destenin önüne bırak.'}</p>
       ${decision ? `<div class="option-row">
-          <label class="field"><span>A seçeneği</span><input id="optionA" maxlength="${L.option}" required autocomplete="off" value="${esc(state.inputs.optionA)}" placeholder="İstanbul'da kal">${counter('optionA', L.option)}</label>
-          <label class="field"><span>B seçeneği</span><input id="optionB" maxlength="${L.option}" required autocomplete="off" value="${esc(state.inputs.optionB)}" placeholder="Berlin'e taşın">${counter('optionB', L.option)}</label>
+          <label class="field option-plate"><span>A seçeneği</span><input id="optionA" maxlength="${L.option}" required autocomplete="off" value="${esc(state.inputs.optionA)}" placeholder="İstanbul'da kal">${counter('optionA', L.option)}</label>
+          <label class="field option-plate"><span>B seçeneği</span><input id="optionB" maxlength="${L.option}" required autocomplete="off" value="${esc(state.inputs.optionB)}" placeholder="Berlin'e taşın">${counter('optionB', L.option)}</label>
         </div>` : ''}
-      <label class="field"><span>${decision ? 'Biraz bağlam ekle' : 'Sorun'}</span>
-        <textarea id="question" maxlength="${L.question}" rows="${decision ? 2 : 3}" placeholder="${esc(SPREADS.PLACEHOLDERS[spread.id] || '')}">${esc(state.inputs.question)}</textarea>${counter('question', L.question)}</label>
-      ${spread.inputs.personName ? `<label class="field"><span>Kişinin adı</span><input id="personName" maxlength="${L.personName}" autocomplete="off" value="${esc(state.inputs.personName)}" placeholder="İsteğe bağlı">${counter('personName', L.personName)}</label>` : ''}
+      <div class="question-paper">
+        <label class="field"><span class="${decision ? '' : 'sr-only'}">${decision ? 'Biraz bağlam ekle' : 'Sorun'}</span>
+          <textarea id="question" maxlength="${L.question}" rows="${decision ? 2 : 3}" placeholder="${esc(SPREADS.PLACEHOLDERS[spread.id] || '')}">${esc(state.inputs.question)}</textarea>${counter('question', L.question)}</label>
+        ${spread.inputs.personName ? `<label class="field person-field"><span>Kişinin adı</span><input id="personName" maxlength="${L.personName}" autocomplete="off" value="${esc(state.inputs.personName)}" placeholder="İsteğe bağlı">${counter('personName', L.personName)}</label>` : ''}
+      </div>
       <p class="hint">Açık uçlu sorular daha iyi okunur: 'Olacak mı?' yerine 'Neye dikkat etmeliyim?'</p>
       <p class="soft-warning" id="repeat-warning" hidden>Aynı soruyu kısa sürede tekrar sormak okumayı bulanıklaştırır. Yine de devam edebilirsin.</p>
     </form>`;
@@ -1364,6 +1370,7 @@ RENDERERS.reading = async () => {
   secondaryBtn.disabled = false;
   body.innerHTML = `<div class="reading-step">${readingMarkup(viewed, spread, interpretation)}</div>`;
   bindReading(viewed, spread);
+  fillClosing(viewed, spread, interpretation, token);
 };
 
 function headingMeta(reading) {
@@ -1403,12 +1410,57 @@ function readingMarkup(reading, spread, interpretation) {
       </section>
       <ol class="position-cards">${items}</ol>
       ${compare}${pairs}
-      <section class="reading-block reading-actions fade-up" style="--i:${spread.cardCount + 2}">
+      <section class="reading-block closing-card fade-up" id="closing" style="--i:${spread.cardCount + 2}" aria-live="polite">
+        <p class="eyebrow">GENEL YORUM</p>
+        <p class="closing-text" id="closing-text">${esc(interpretation.closing || '')}</p>
+        <p class="closing-status" id="closing-status"${interpretation.closing ? ' hidden' : ''}>Usta, kartların birlikte ne dediğine bakıyor.</p>
+      </section>
+      <section class="reading-block reading-actions fade-up" style="--i:${spread.cardCount + 3}">
         <label class="field"><span>Not ekle</span><textarea id="note" rows="3" maxlength="2000" placeholder="Bu okuma sana ne düşündürdü?">${esc(reading.note || '')}</textarea><span class="counter" id="note-state" aria-live="polite">Okuma otomatik kaydedildi</span></label>
         ${reminder}
       </section>
       <p class="disclaimer">Tarot bir yansıtma aracıdır; sağlık, hukuk ve finans kararlarında uzman görüşünün yerini tutmaz.</p>
     </div>`;
+}
+
+function closingStatus(error) {
+  if (error && error.name === 'AbortError') return 'Yorum bu sefer yetişmedi. Üstteki sentez duruyor.';
+  if (error && error.code === 'missing-model') return 'Yorum modeli henüz hazır değil. Üstteki sentez duruyor.';
+  return 'Yorum kapısı kapalı. Üstteki sentez duruyor.';
+}
+
+async function fillClosing(reading, spread, interpretation, token) {
+  const textEl = $('#closing-text');
+  const statusEl = $('#closing-status');
+  if (!textEl || !statusEl) return;
+  if (interpretation.closing && interpretation.closingVoice === ORACLE.VOICE) {
+    textEl.textContent = interpretation.closing;
+    statusEl.hidden = true;
+    return;
+  }
+  const draft = ORACLE.longClosing(reading, spread, TAROT);
+  textEl.textContent = draft;
+  statusEl.hidden = true;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 25000);
+  try {
+    const text = await ORACLE.closing(reading, spread, TAROT, { signal: ctrl.signal });
+    const longEnough = text && text.trim().split(/\s+/).length >= 180;
+    if (token !== state.renderToken || !textEl.isConnected || !longEnough) throw new Error('short');
+    interpretation.closing = text.trim();
+    interpretation.closingSource = 'llm';
+    textEl.textContent = interpretation.closing;
+    await service.saveClosing(reading.id, interpretation.closing, 'llm');
+  } catch (error) {
+    if (token !== state.renderToken || !textEl.isConnected) return;
+    interpretation.closing = draft;
+    interpretation.closingSource = 'template';
+    textEl.textContent = draft;
+    statusEl.hidden = true;
+    await service.saveClosing(reading.id, draft, 'template');
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function bindReading(reading, spread) {
