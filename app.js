@@ -4,7 +4,7 @@ const REFERENCE_WIDTH = 1586;
 const REFERENCE_HEIGHT = 992;
 const MOBILE_BREAKPOINT = 900;
 const NARROW_BREAKPOINT = 375;
-const CARD_RATIO = 1.6;
+const CARD_RATIO = 600 / 350;
 const DECK_SIZE = 78;
 const SHUFFLE_HOLD_MS = 1500;
 const AUTO_SHUFFLE_MS = 1800;
@@ -14,19 +14,12 @@ const TAROT = window.TAROT_CARDS;
 const SPREADS = window.TAROT_SPREADS;
 const ENGINE = window.TAROT_READING;
 
-const MOODS = {
-  tired: ['Güçlü görünüyorum.', 'Biraz yoruldum.'],
-  uncertain: ['Bir yol ayrımındayım.', 'Kendimi duymak istiyorum.'],
-  hopeful: ['İçimde bir umut var.', 'Ona yer açmak istiyorum.'],
-  quiet: ['Biraz yavaşlamak istiyorum.', 'Kendime dönmek istiyorum.']
-};
-
-const ICONS = {
-  today: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>',
-  love: '<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20Z"/>',
-  work: '<rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5V5.8c0-.7.6-1.3 1.3-1.3h3.4c.7 0 1.3.6 1.3 1.3v1.7M3.5 12.5h17M12 11.3v2.4"/>',
-  decision: '<path d="M12 21v-7.5M12 13.5 6 7.5M12 13.5l6-6M6 7.5V3.5m0 4H2M18 7.5V3.5m0 4h4"/>',
-  general: '<path d="M12 3c.6 4.3 1.9 6.9 9 9-7.1 2.1-8.4 4.7-9 9-.6-4.3-1.9-6.9-9-9 7.1-2.1 8.4-4.7 9-9Z"/>'
+const INTENT_CARD = {
+  today: 'major-19',
+  love: 'major-06',
+  work: 'pentacles-01',
+  decision: 'major-11',
+  general: 'major-01'
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -44,11 +37,12 @@ const progressEl = $('#progress');
 const backBtn = $('#back');
 const secondaryBtn = $('#secondary');
 const primaryBtn = $('#primary');
+const reshuffleBtn = $('#reshuffle');
+const BACK_MARK = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 5 8 12l7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+let onBack = () => {};
 const statusEl = $('#status');
 const announcer = $('#announcer');
 const dialogs = {
-  guide: $('#guide-dialog'),
-  spreads: $('#spreads-dialog'),
   history: $('#history-dialog'),
   settings: $('#settings-dialog'),
   leave: $('#leave-dialog'),
@@ -203,8 +197,13 @@ function localRect(el) {
   return scaleRect(el.getBoundingClientRect(), rectFactor() / pageScale());
 }
 
-const LABEL_HEIGHT = { preview: 30, pick: 20, reveal: 64, thumb: 0, share: 60 };
-const MAX_CARD = { preview: 92, pick: 74, reveal: 150, thumb: 22, share: 170 };
+const LABEL_HEIGHT = { preview: 30, pick: 20, reveal: 64, share: 60 };
+const MAX_CARD = { preview: 92, pick: 74, reveal: 150, share: 170 };
+
+function frameFor(spread) {
+  const ys = spread.positions.map((p) => p.slot.y);
+  return Math.max(...ys) - Math.min(...ys) < 0.01 ? 'row' : 'map';
+}
 
 function slotsFor(spread, narrow) {
   const override = narrow ? SPREADS.NARROW_SLOTS[spread.id] : null;
@@ -218,9 +217,16 @@ function slotsFor(spread, narrow) {
 function geometry(spread, width, height, mode, narrow) {
   const slots = slotsFor(spread, narrow);
   const celtic = spread.id === 'celtic';
-  const labelH = mode === 'reveal' && celtic ? 44 : LABEL_HEIGHT[mode];
+  const rowPreview = mode === 'preview' && frameFor(spread) === 'row';
+  let labelH = LABEL_HEIGHT[mode];
+  if (mode === 'reveal' && celtic) labelH = 44;
+  if (rowPreview) labelH = isMobile() ? 34 : 60;
+  if (mode === 'preview' && celtic) labelH = 22;
+  let maxCard = MAX_CARD[mode];
+  if (rowPreview) maxCard = isMobile() ? 86 : 118;
+  if (mode === 'preview' && celtic) maxCard = 84;
   const cellRatio = celtic ? 1.42 : 1.36;
-  const gapRatio = mode === 'thumb' ? 0.1 : 0.14;
+  const gapRatio = 0.14;
   const xs = slots.map((s) => s.x);
   const ys = slots.map((s) => s.y);
   const minX = Math.min(...xs);
@@ -229,14 +235,15 @@ function geometry(spread, width, height, mode, narrow) {
   const spanY = Math.max(...ys) - minY;
   const byWidth = width / (spanX * cellRatio + 1);
   const byHeight = (height - labelH * (spanY + 1)) / (spanY * (CARD_RATIO + gapRatio) + CARD_RATIO);
-  const cw = Math.max(8, Math.floor(Math.min(byWidth, byHeight, MAX_CARD[mode])));
+  const cw = Math.max(8, Math.floor(Math.min(byWidth, byHeight, maxCard)));
   const ch = Math.round(cw * CARD_RATIO);
   const cellW = cw * cellRatio;
   const cellH = ch + labelH + cw * gapRatio;
   const contentW = spanX * cellW + cw;
   const contentH = spanY * cellH + ch + labelH;
   const ox = (width - contentW) / 2;
-  const oy = (height - contentH) / 2;
+  const oyBase = (height - contentH) / 2;
+  const oy = rowPreview ? Math.max(4, Math.min(oyBase, 12)) : oyBase;
   return {
     cw, ch, labelH, cellW, spanY,
     slots: slots.map((s) => ({ ...s, left: Math.round(ox + (s.x - minX) * cellW), top: Math.round(oy + (s.y - minY) * cellH) }))
@@ -244,7 +251,10 @@ function geometry(spread, width, height, mode, narrow) {
 }
 
 function cardBackVars(w, h) {
-  return `--bx:${(w / 136).toFixed(4)};--by:${(h / 202).toFixed(4)}`;
+  const cover = Math.max(w / 136, h / 202);
+  const posX = -920 * cover + (w - 136 * cover) / 2;
+  const posY = -596 * cover + (h - 202 * cover) / 2;
+  return `--bx:${cover.toFixed(4)};--by:${cover.toFixed(4)};--bpx:${posX.toFixed(2)}px;--bpy:${posY.toFixed(2)}px`;
 }
 
 // ---------- Durum ----------
@@ -267,7 +277,8 @@ const state = {
   startedAt: 0,
   viewOnly: false,
   renderToken: 0,
-  busy: false
+  busy: false,
+  forceNew: false
 };
 
 const currentSpread = () => SPREADS.getSpread(state.spreadId);
@@ -284,6 +295,7 @@ function resetReading() {
   state.viewOnly = false;
   state.busy = false;
   state.finishing = false;
+  state.forceNew = false;
 }
 
 function resetInputs() {
@@ -311,17 +323,28 @@ function setProgress(text) {
   progressEl.textContent = text || '';
 }
 
-function setActions({ back = false, secondary = null, primary = null, status = '' } = {}) {
-  backBtn.hidden = !back;
+function setActions({ back: backOpt = false, secondary = null, reshuffle = null, primary = null, status = '', statusHtml = '' } = {}) {
+  if (backOpt && typeof backOpt === 'object') {
+    backBtn.hidden = false;
+    backBtn.innerHTML = `${BACK_MARK} ${esc(backOpt.label)}`;
+    onBack = backOpt.onClick;
+  } else {
+    backBtn.hidden = !backOpt;
+    backBtn.innerHTML = `${BACK_MARK} Geri`;
+    onBack = back;
+  }
   secondaryBtn.hidden = !secondary;
   secondaryBtn.textContent = secondary ? secondary.label : '';
   secondaryBtn.onclick = secondary ? secondary.onClick : null;
+  reshuffleBtn.hidden = !reshuffle;
+  reshuffleBtn.onclick = reshuffle ? reshuffle.onClick : null;
   primaryBtn.hidden = !primary;
   primaryBtn.disabled = Boolean(primary && primary.disabled);
   primaryBtn.innerHTML = primary ? `${esc(primary.label)}${primary.arrow === false ? '' : ' <span aria-hidden="true">→</span>'}` : '';
   primaryBtn.onclick = primary ? primary.onClick : null;
-  statusEl.textContent = status;
-  panel.classList.toggle('no-actions', !back && !secondary && !primary);
+  if (statusHtml) statusEl.innerHTML = statusHtml;
+  else statusEl.textContent = status || '';
+  panel.classList.toggle('no-actions', !backOpt && !secondary && !reshuffle && !primary);
 }
 
 function announce(text) {
@@ -333,12 +356,25 @@ function announce(text) {
 
 const RENDERERS = {};
 
+function clearConfirmChrome() {
+  delete panel.dataset.frame;
+  delete stage.dataset.frame;
+  const meta = $('#spread-meta');
+  if (meta) {
+    meta.hidden = true;
+    meta.replaceChildren();
+  }
+  const depth = $('#depth-slot');
+  if (depth) depth.replaceChildren();
+}
+
 function go(step, options = {}) {
   const from = state.step;
   state.step = step;
   stage.dataset.step = step;
   state.renderToken++;
   body.classList.remove('no-enter');
+  clearConfirmChrome();
   if (step !== 'intent') armHistory();
   const result = RENDERERS[step](options, from);
   if (options.focus !== false) requestAnimationFrame(() => titleEl.focus({ preventScroll: true }));
@@ -369,12 +405,18 @@ window.addEventListener('popstate', () => {
     armHistory();
     return;
   }
+  if (stage.dataset.view === 'guide') {
+    showHome({ fromHistory: true });
+    return;
+  }
   if (state.step === 'intent') return;
   back();
   if (state.step !== 'intent' || inReading()) armHistory();
 });
 
-backBtn.addEventListener('click', back);
+backBtn.addEventListener('click', () => onBack());
+
+let pendingView = 'home';
 
 function openLeaveDialog() {
   const picked = state.picks.length > 0;
@@ -386,6 +428,8 @@ function openLeaveDialog() {
 }
 
 dialogs.leave.addEventListener('close', async () => {
+  const next = pendingView;
+  pendingView = 'home';
   if (dialogs.leave.returnValue !== 'leave') return;
   if (!state.picks.length && state.readingPromise) {
     const { readingId, existing } = await state.readingPromise.catch(() => ({}));
@@ -396,6 +440,7 @@ dialogs.leave.addEventListener('close', async () => {
   }
   resetReading();
   go('intent');
+  if (next === 'guide') showGuide();
 });
 
 // ---------- 1 · Niyet ----------
@@ -427,20 +472,18 @@ function intentMarkup(draft, daily) {
   const cards = SPREADS.INTENTS.map((intent, i) => {
     const spread = SPREADS.getSpread(intent.spreadId);
     const drawn = intent.id === 'today' && doneDaily ? TAROT.getCard(doneDaily.cards[0].cardId) : null;
-    const extra = drawn
-      ? `<span class="daily-thumb${doneDaily.cards[0].reversed ? ' is-reversed' : ''}"><img src="${esc(drawn.image)}" alt="" decoding="async"></span><span class="done-badge">Bugün çekildi</span>`
-      : '';
+    const portrait = drawn || TAROT.getCard(INTENT_CARD[intent.id]);
+    const reversed = Boolean(drawn && doneDaily.cards[0].reversed);
     const label = drawn ? `${intent.title}: bugün çekildi, ${drawn.nameTr}. Kayıtlı yorumu aç.` : `${intent.title}: ${intent.sub}. ${SPREADS.chip(spread)}`;
     return `<li style="--i:${i}"><button type="button" class="intent-card${drawn ? ' is-done' : ''}" data-intent="${intent.id}" aria-label="${esc(label)}">
-        <svg class="intent-icon" viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[intent.id]}</svg>
-        ${extra}
+        <span class="intent-art${reversed ? ' is-reversed' : ''}"><img src="${esc(portrait.image)}" alt="" decoding="async"></span>
         <span class="intent-title">${esc(intent.title)}</span>
+        ${drawn ? '<span class="done-badge">Bugün çekildi</span>' : ''}
         <span class="intent-sub">${esc(intent.sub)}</span>
         <span class="chip">${esc(SPREADS.chip(spread))}</span>
       </button></li>`;
   }).join('');
-  return `<div class="intent-step">${banner}<ul class="intent-grid" role="list">${cards}</ul>
-    <button type="button" class="text-button all-spreads" data-action="all-spreads">Tüm açılımları gör</button></div>`;
+  return `<div class="intent-step">${banner}<ul class="intent-grid" role="list">${cards}</ul></div>`;
 }
 
 body.addEventListener('click', (event) => {
@@ -455,7 +498,6 @@ body.addEventListener('click', (event) => {
       target.closest('.draft-banner').remove();
     }));
   }
-  if (action === 'all-spreads') return openSpreads();
   return undefined;
 });
 
@@ -482,36 +524,47 @@ async function openDaily() {
 
 // ---------- 2 · Açılım onayı ----------
 
+function readyTitle(count) {
+  return count === 1 ? 'Kartın hazır' : `${count} kartın da hazır`;
+}
+
+function readyStatusHtml(count) {
+  return `<span class="ready-check" aria-hidden="true">✓</span><span>${readyTitle(count)}</span>`;
+}
+
+function captionFor(position) {
+  return position.caption || ENGINE.displayPrompt(position, readingContext());
+}
+
 RENDERERS.confirm = () => {
   const spread = currentSpread();
-  const general = state.intentId === 'general';
-  setHeading(spread.name, `${spread.cardCount} kart · yaklaşık ${spread.estMinutes} dakika`);
   setProgress('');
   setActions({
-    back: true,
-    secondary: { label: 'Başka açılım seç', onClick: openSpreads },
+    back: { label: 'Başka açılım seç', onClick: () => go('intent') },
     primary: {
-      label: 'Devam',
+      label: 'Kartlarımı aç',
       onClick: () => {
         track('spread_confirmed', { spreadId: state.spreadId, depth: state.spreadId === 'celtic' ? 'detailed' : 'quick' });
         go('question');
       }
-    }
+    },
+    statusHtml: readyStatusHtml(spread.cardCount)
   });
   body.innerHTML = `<div class="confirm-step">
-      ${general ? `<div class="segmented depth-control" role="radiogroup" aria-label="Okuma derinliği">
-          <button type="button" role="radio" data-depth="three" aria-checked="${spread.id === 'three'}" tabindex="${spread.id === 'three' ? 0 : -1}">Hızlı · 3 kart</button>
-          <button type="button" role="radio" data-depth="celtic" aria-checked="${spread.id === 'celtic'}" tabindex="${spread.id === 'celtic' ? 0 : -1}">Detaylı · 10 kart</button>
-        </div>` : ''}
       <div class="confirm-grid">
-        <div class="layout-stage preview-stage" id="layout" aria-hidden="true"></div>
-        <ol class="position-list" id="position-list" aria-label="Pozisyonlar"></ol>
+        <div class="layout-stage preview-stage" id="layout"></div>
+        <aside class="spread-map" id="spread-map">
+          <p class="map-kicker">AÇILIMIN HARİTASI</p>
+          <ol class="position-list" id="position-list" aria-label="Pozisyonlar"></ol>
+        </aside>
       </div>
     </div>`;
-  renderPositionList(spread);
-  requestAnimationFrame(() => renderLayout($('#layout'), spread, 'preview'));
-  const control = $('.depth-control', body);
-  if (control) {
+  if (state.intentId === 'general') {
+    $('#depth-slot').innerHTML = `<div class="segmented depth-control" role="radiogroup" aria-label="Okuma derinliği">
+        <button type="button" role="radio" data-depth="three" aria-checked="${spread.id === 'three'}" tabindex="${spread.id === 'three' ? 0 : -1}">Hızlı · 3 kart</button>
+        <button type="button" role="radio" data-depth="celtic" aria-checked="${spread.id === 'celtic'}" tabindex="${spread.id === 'celtic' ? 0 : -1}">Detaylı · 10 kart</button>
+      </div>`;
+    const control = $('.depth-control');
     control.addEventListener('click', (event) => {
       const button = event.target.closest('[data-depth]');
       if (button) setDepth(button.dataset.depth);
@@ -523,10 +576,26 @@ RENDERERS.confirm = () => {
       $(`[data-depth="${state.spreadId}"]`, control).focus();
     });
   }
+  paintConfirmChrome(spread);
+  requestAnimationFrame(() => renderLayout($('#layout'), spread, 'preview'));
 };
 
+function paintConfirmChrome(spread) {
+  const frame = frameFor(spread);
+  panel.dataset.frame = frame;
+  stage.dataset.frame = frame;
+  setHeading(spread.name, spread.blurb || '');
+  const meta = $('#spread-meta');
+  meta.hidden = false;
+  meta.className = 'meta-line';
+  meta.textContent = `${spread.cardCount} kart · Yaklaşık ${spread.estMinutes} dakika`;
+  $('#spread-map').classList.toggle('is-visual', frame === 'map');
+  renderPositionList(spread);
+  statusEl.innerHTML = readyStatusHtml(spread.cardCount);
+}
+
 function renderPositionList(spread) {
-  $('#position-list').innerHTML = spread.positions.map((p) => `<li><span class="position-index">${p.index}</span><span><strong>${esc(labelFor(p))}</strong><small>${esc(ENGINE.displayPrompt(p, readingContext()))}</small></span></li>`).join('');
+  $('#position-list').innerHTML = spread.positions.map((p) => `<li><span class="position-index">${p.index}</span><span><strong>${esc(labelFor(p))}</strong><small>${esc(captionFor(p))}</small></span></li>`).join('');
 }
 
 function setDepth(spreadId) {
@@ -538,9 +607,10 @@ function setDepth(spreadId) {
     b.setAttribute('aria-checked', String(on));
     b.tabIndex = on ? 0 : -1;
   });
-  setHeading(spread.name, `${spread.cardCount} kart · yaklaşık ${spread.estMinutes} dakika`);
-  renderPositionList(spread);
-  morphLayout($('#layout'), spread, 'preview');
+  paintConfirmChrome(spread);
+  const layout = $('#layout');
+  void layout.offsetWidth;
+  morphLayout(layout, spread, 'preview');
 }
 
 // ---------- 3 · Soru ----------
@@ -612,13 +682,37 @@ function showCrisis() {
 
 function ensureReading() {
   if (!state.readingPromise) {
+    const forceNew = state.forceNew;
     state.readingPromise = service.createReading({
       spreadId: state.spreadId,
       ...state.inputs,
-      reversalsEnabled: settings.reversals
+      reversalsEnabled: settings.reversals,
+      forceNew
+    }).then((result) => {
+      if (!result.existing) state.forceNew = false;
+      return result;
     });
   }
   return state.readingPromise;
+}
+
+function startNewReading() {
+  const spreadId = state.spreadId;
+  const intentId = state.intentId;
+  const source = state.reading || state.inputs;
+  const inputs = {
+    question: source.question || '',
+    optionA: source.optionA || '',
+    optionB: source.optionB || '',
+    personName: source.personName || ''
+  };
+  resetReading();
+  state.spreadId = spreadId;
+  state.intentId = intentId;
+  state.inputs = inputs;
+  state.startedAt = performance.now();
+  state.forceNew = true;
+  return go('shuffle');
 }
 
 RENDERERS.shuffle = () => {
@@ -760,7 +854,8 @@ function updatePickHeading() {
 const fanState = { mobile: false, raf: 0 };
 
 function fanCardSize() {
-  return isMobile() ? { w: 62, h: 99 } : { w: 72, h: 115 };
+  const w = isMobile() ? 62 : 72;
+  return { w, h: Math.round(w * CARD_RATIO) };
 }
 
 function buildFan() {
@@ -1113,7 +1208,12 @@ async function revealAll() {
 
 function renderLayout(container, spread, mode) {
   const narrow = isNarrow();
-  const geo = geometry(spread, container.clientWidth, container.clientHeight, mode, narrow);
+  const reserve = mode === 'preview' && spread.id === 'celtic' && !narrow ? 112 : 0;
+  const geo = geometry(spread, Math.max(40, container.clientWidth - reserve), container.clientHeight, mode, narrow);
+  if (mode === 'preview' && spread.id === 'celtic') {
+    const root = geo.slots.find((s) => s.key === 'root');
+    if (root) root.top += 30;
+  }
   container.style.setProperty('--cw', `${geo.cw}px`);
   container.style.setProperty('--ch', `${geo.ch}px`);
   container.style.setProperty('--label-w', `${Math.round(geo.cellW - 4)}px`);
@@ -1148,7 +1248,7 @@ function createSlot(s, mode) {
   slot.className = `lay-slot${s.rot ? ' is-cross' : ''}`;
   slot.dataset.key = s.key;
   const interactive = mode === 'reveal' || mode === 'pick';
-  const inner = `<span class="card-turn"><span class="card-flip"><span class="face face-back card-back"></span><span class="face face-front"><img alt="" decoding="async"></span></span></span>`;
+  const inner = `<span class="card-turn"><span class="card-flip"><span class="face face-back card-back"><span class="lay-index">${s.position.index}</span></span><span class="face face-front"><img alt="" decoding="async"></span></span></span>`;
   slot.innerHTML = `<div class="lay-rot" style="transform:rotate(${s.rot}deg)">${interactive ? `<button type="button" class="lay-card">${inner}</button>` : `<span class="lay-card">${inner}</span>`}</div>
     <div class="lay-label"><span class="lay-name"><span class="lay-num">${s.position.index}</span> <span class="lay-text"></span></span><span class="lay-detail"></span></div>`;
   return slot;
@@ -1167,15 +1267,21 @@ function ensureSlotButton(slot) {
 
 function updateSlotLabel(slot, position, mode) {
   const label = labelFor(position);
-  $('.lay-num', slot).textContent = position.index;
+  SPREADS.stampSlotBadge(slot, position);
   $('.lay-text', slot).textContent = label;
   const button = mode === 'reveal' ? ensureSlotButton(slot) : $('.lay-card', slot);
   const pick = state.picks.find((p) => p.positionKey === position.key);
   const detail = $('.lay-detail', slot);
+  const spread = currentSpread();
   if (mode === 'reveal' && pick && pick.card && state.revealed.has(position.key)) {
     const card = TAROT.getCard(pick.card.id);
     const kw = ENGINE.keywordsOf(card, pick.reversed, TAROT);
     detail.innerHTML = `<span class="lay-card-name">${esc(card.name)}${pick.reversed ? ' <span class="badge-reversed">Ters</span>' : ''}</span>${position.slot.rot ? '' : `<span class="lay-keywords">${esc(kw.join(' · '))}</span>`}`;
+  } else if (mode === 'preview' && frameFor(spread) === 'row') {
+    detail.innerHTML = `<span class="lay-prompt">${esc(captionFor(position))}</span>`;
+  } else if (mode === 'preview' && spread.id === 'celtic' && position.key === 'present') {
+    const challenge = spread.positions.find((p) => p.key === 'challenge');
+    detail.innerHTML = `<span class="lay-subname">${esc(challenge.label)}</span>`;
   } else {
     detail.innerHTML = '';
   }
@@ -1240,7 +1346,7 @@ RENDERERS.reading = async () => {
   setActions({
     back: true,
     secondary: { label: 'Paylaş', onClick: shareReading },
-    primary: { label: 'Yeni okuma', onClick: () => go('intent') }
+    primary: { label: 'Yeni okuma', onClick: startNewReading }
   });
   secondaryBtn.disabled = true;
   const reading = state.reading;
@@ -1268,7 +1374,6 @@ function headingMeta(reading) {
 function readingMarkup(reading, spread, interpretation) {
   const byKey = Object.fromEntries(reading.cards.map((c) => [c.positionKey, c]));
   const texts = Object.fromEntries(interpretation.positions.map((p) => [p.positionKey, p.text]));
-  const mood = MOODS[$('#mood').value].join(' ');
   const items = spread.positions.map((position, i) => {
     const drawn = byKey[position.key];
     const card = TAROT.getCard(drawn.cardId);
@@ -1295,7 +1400,6 @@ function readingMarkup(reading, spread, interpretation) {
         <p class="eyebrow">GENEL SENTEZ</p>
         <p class="summary-text">${esc(interpretation.summary)}</p>
         ${interpretation.summaryMore ? `<p class="summary-more">${esc(interpretation.summaryMore)}</p>` : ''}
-        <p class="summary-mood">Bugün içinden geçen: ${esc(mood)}</p>
       </section>
       <ol class="position-cards">${items}</ol>
       ${compare}${pairs}
@@ -1510,64 +1614,179 @@ async function storyImage(reading, spread, interpretation, withFaces) {
 
 // ---------- Diyaloglar ----------
 
-let guideBuilt = false;
-function buildGuide() {
-  if (guideBuilt) return;
-  guideBuilt = true;
-  $('#guide-grid').innerHTML = TAROT.CARDS.map((card) => {
-    const line = card.keywords.slice(0, 3).join(', ');
-    return `<article class="guide-card"><div class="guide-art"><span class="card-visual photo-face" aria-hidden="true"><img src="${card.image}" alt="" loading="lazy" decoding="async"></span></div><h3>${card.nameTr}</h3><p>${line}</p></article>`;
+const GUIDE_GROUPS = [
+  { id: 'major', title: 'Büyük Arkana' },
+  { id: 'wands', title: 'Asalar' },
+  { id: 'cups', title: 'Kupalar' },
+  { id: 'swords', title: 'Kılıçlar' },
+  { id: 'pentacles', title: 'Tılsımlar' }
+];
+let guideSuit = 'all';
+let guideQuery = '';
+
+function guideCards(groupId) {
+  return groupId === 'major' ? TAROT.MAJOR : TAROT.MINOR.filter((card) => card.suit === groupId);
+}
+
+function cardMatches(card, query) {
+  if (!query) return true;
+  const haystack = [card.name, card.nameTr, card.altTr, ...(card.keywords || [])].filter(Boolean).join(' ').toLocaleLowerCase('tr');
+  return haystack.includes(query);
+}
+
+function guideNote(count) {
+  if (!count) return 'Bu aramaya uyan kart yok.';
+  if (guideSuit === 'all') return `${count} kart. Birine dokun, penceresini aç.`;
+  if (guideSuit === 'major') return `${count} kart. Hayatın geniş döngüleri.`;
+  const suit = TAROT.SUITS[guideSuit];
+  return `${count} kart · ${suit.element}. ${suit.area}.`;
+}
+
+function renderGuide() {
+  const query = guideQuery.trim().toLocaleLowerCase('tr');
+  const groups = GUIDE_GROUPS.filter((group) => guideSuit === 'all' || group.id === guideSuit);
+  let count = 0;
+  const html = groups.map((group) => {
+    const cards = guideCards(group.id).filter((card) => cardMatches(card, query));
+    if (!cards.length) return '';
+    count += cards.length;
+    const tiles = cards.map((card) => `<button type="button" class="guide-card" data-card="${esc(card.id)}" tabindex="-1" aria-label="${esc(card.name)}, ${esc(card.nameTr)}">
+        <span class="guide-art"><img src="${esc(card.image)}" alt="" loading="lazy" decoding="async"></span>
+        <span class="guide-name">${esc(card.nameTr)}</span>
+        <span class="guide-keys">${esc(card.keywords.slice(0, 2).join(' · '))}</span>
+      </button>`).join('');
+    return `<section class="guide-group"><h3>${esc(group.title)} <span>${cards.length}</span></h3><div class="guide-grid">${tiles}</div></section>`;
+  }).join('');
+  $('#guide-note').textContent = guideNote(count);
+  $('#guide-scroll').innerHTML = html || '<p class="guide-empty">Bu aramaya uyan kart yok.</p>';
+  const first = $('.guide-card', $('#guide-scroll'));
+  if (first) first.tabIndex = 0;
+}
+
+function setGuideSuit(suit, focusButton) {
+  guideSuit = suit;
+  $$('[data-suit]', $('#guide-page')).forEach((button) => {
+    const on = button.dataset.suit === suit;
+    button.setAttribute('aria-checked', on ? 'true' : 'false');
+    button.tabIndex = on ? 0 : -1;
+  });
+  renderGuide();
+  if (focusButton) focusButton.focus();
+}
+
+function showHome({ fromHistory = false } = {}) {
+  const wasGuide = stage.dataset.view === 'guide';
+  stage.dataset.view = 'home';
+  $('#guide-page').hidden = true;
+  setActiveNav('home');
+  if (wasGuide && !fromHistory && history.state?.kd === 'guide') history.back();
+}
+
+function showGuide() {
+  stage.dataset.view = 'guide';
+  $('#guide-page').hidden = false;
+  setActiveNav('guide');
+  renderGuide();
+  if (history.state?.kd !== 'guide') history.pushState({ kd: 'guide' }, '');
+  requestAnimationFrame(() => $('#guide-title').focus({ preventScroll: true }));
+}
+
+function setActiveNav(name) {
+  $$('.navigation [data-nav]').forEach((el) => {
+    const on = el.dataset.nav === name;
+    el.classList.toggle('nav-active', on);
+    if (on) el.setAttribute('aria-current', 'page');
+    else el.removeAttribute('aria-current');
+  });
+}
+
+function moveGuideFocus(event) {
+  const buttons = $$('.guide-card', $('#guide-scroll'));
+  const index = buttons.indexOf(document.activeElement);
+  if (index < 0 || !buttons.length) return;
+  const grid = document.activeElement.closest('.guide-grid');
+  const columns = grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 1;
+  let next = index;
+  if (event.key === 'ArrowRight') next = Math.min(buttons.length - 1, index + 1);
+  else if (event.key === 'ArrowLeft') next = Math.max(0, index - 1);
+  else if (event.key === 'ArrowDown') next = Math.min(buttons.length - 1, index + columns);
+  else if (event.key === 'ArrowUp') next = Math.max(0, index - columns);
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = buttons.length - 1;
+  else return;
+  event.preventDefault();
+  buttons.forEach((button, i) => { button.tabIndex = i === next ? 0 : -1; });
+  buttons[next].focus();
+}
+
+let historySpread = '';
+
+function formatReadingDate(iso) {
+  const date = new Date(iso);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: sameYear ? undefined : 'numeric' });
+}
+
+function renderHistoryFilters() {
+  const options = [{ id: '', name: 'Tümü' }, ...SPREADS.SPREADS.map((s) => ({ id: s.id, name: s.name }))];
+  $('#history-filters').innerHTML = options.map((s) => {
+    const on = s.id === historySpread;
+    return `<button type="button" role="radio" data-spread="${s.id}" aria-checked="${on ? 'true' : 'false'}" tabindex="${on ? '0' : '-1'}">${esc(s.name)}</button>`;
   }).join('');
 }
 
-function openSpreads() {
-  $('#spread-list').innerHTML = SPREADS.SPREADS.map((spread) => `<li><button type="button" class="spread-option" data-spread="${spread.id}">
-      <span class="layout-thumb" data-thumb="${spread.id}" aria-hidden="true"></span>
-      <span><strong>${esc(spread.name)}</strong><small>${esc(SPREADS.chip(spread))}</small></span>
-    </button></li>`).join('');
-  dialogs.spreads.showModal();
-  $$('[data-thumb]', dialogs.spreads).forEach((el) => drawThumb(el, SPREADS.getSpread(el.dataset.thumb)));
-}
-
-$('#spread-list').addEventListener('click', (event) => {
-  const button = event.target.closest('[data-spread]');
-  if (!button) return;
-  dialogs.spreads.close();
-  const spread = SPREADS.getSpread(button.dataset.spread);
-  resetInputs();
-  state.intentId = spread.intents[0];
-  state.startedAt = performance.now();
-  if (spread.id === 'daily') { openDaily(); return; }
-  state.spreadId = spread.id;
-  go('confirm');
-});
-
-function drawThumb(el, spread) {
-  const geo = geometry(spread, 56, 56, 'thumb', false);
-  el.innerHTML = geo.slots.map((s) => `<i style="left:${s.left}px;top:${s.top}px;width:${geo.cw}px;height:${geo.ch}px;transform:rotate(${s.rot}deg)"></i>`).join('');
-}
-
 async function renderHistory() {
-  const filter = $('#history-filter').value;
-  const list = await service.list({ spreadId: filter || undefined });
+  const list = await service.list({ spreadId: historySpread || undefined });
+  const count = $('#history-count');
+  count.textContent = list.length ? `${list.length} okuma` : '';
   const el = $('#history-list');
   if (!list.length) {
-    el.innerHTML = '<li class="empty-state">Henüz tamamlanmış bir okuman yok. İlk açılımın burada görünecek.</li>';
+    el.innerHTML = historySpread
+      ? '<li class="history-empty"><strong>Bu açılımda okuma yok</strong><p>Başka bir açılım seçebilir ya da yeni bir okuma başlatabilirsin.</p></li>'
+      : `<li class="history-empty"><span class="history-empty-mark card-back" style="${cardBackVars(78, 116)}" aria-hidden="true"></span><strong>Henüz bir okuman yok</strong><p>İlk açılımın burada, seçtiğin kartlarla birlikte duracak.</p></li>`;
     return;
   }
   el.innerHTML = list.map((r) => {
     const spread = SPREADS.getSpread(r.spreadId);
-    const date = new Date(r.completedAt || r.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+    const date = formatReadingDate(r.completedAt || r.createdAt);
+    const faces = (r.cards || []).slice(0, 3).map((drawn) => {
+      const card = TAROT.getCard(drawn.cardId);
+      return `<img src="${esc(card.image)}" alt="" decoding="async">`;
+    }).join('');
+    const names = (r.cards || []).slice(0, 3).map((drawn) => TAROT.getCard(drawn.cardId).nameTr).join(' · ');
+    const line = r.question ? `“${esc(r.question)}”` : esc(names);
     return `<li><button type="button" class="history-item" data-id="${esc(r.id)}">
-        <span class="layout-thumb" data-thumb="${spread.id}" aria-hidden="true"></span>
-        <span><strong>${esc(spread.name)}</strong><small>${esc(date)}</small>${r.question ? `<em>“${esc(r.question)}”</em>` : ''}</span>
+        <span class="history-cards" aria-hidden="true">${faces}</span>
+        <span class="history-copy"><span class="history-date">${esc(date)}</span><strong>${esc(spread.name)}</strong>${line ? `<em>${line}</em>` : ''}</span>
+        <span class="history-go" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
       </button></li>`;
   }).join('');
-  $$('[data-thumb]', el).forEach((thumb) => drawThumb(thumb, SPREADS.getSpread(thumb.dataset.thumb)));
 }
 
-$('#history-filter').innerHTML += SPREADS.SPREADS.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
-$('#history-filter').addEventListener('change', renderHistory);
+renderHistoryFilters();
+$('#history-filters').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-spread]');
+  if (!button || button.dataset.spread === historySpread) return;
+  historySpread = button.dataset.spread;
+  $$('[data-spread]', $('#history-filters')).forEach((el) => {
+    const on = el.dataset.spread === historySpread;
+    el.setAttribute('aria-checked', on ? 'true' : 'false');
+    el.tabIndex = on ? 0 : -1;
+  });
+  renderHistory();
+});
+$('#history-filters').addEventListener('keydown', (event) => {
+  const buttons = $$('[role=radio]', $('#history-filters'));
+  const index = buttons.indexOf(document.activeElement);
+  if (index < 0) return;
+  let next = index;
+  if (event.key === 'ArrowRight') next = Math.min(buttons.length - 1, index + 1);
+  else if (event.key === 'ArrowLeft') next = Math.max(0, index - 1);
+  else return;
+  event.preventDefault();
+  buttons[next].click();
+  buttons[next].focus();
+});
 $('#history-list').addEventListener('click', async (event) => {
   const button = event.target.closest('[data-id]');
   if (!button) return;
@@ -1595,28 +1814,61 @@ $('#settings-form').addEventListener('change', (event) => {
   applyMotion();
 });
 
-$('#open-guide').addEventListener('click', () => { buildGuide(); dialogs.guide.showModal(); });
+$('#open-guide').addEventListener('click', () => {
+  if (stage.dataset.view === 'guide') return;
+  if (inReading()) {
+    pendingView = 'guide';
+    openLeaveDialog();
+    return;
+  }
+  showGuide();
+});
 $('#open-history').addEventListener('click', () => { renderHistory(); dialogs.history.showModal(); });
 $('#open-settings').addEventListener('click', openSettings);
 
 $$('[data-nav="home"]').forEach((link) => link.addEventListener('click', (event) => {
   event.preventDefault();
-  if (inReading()) openLeaveDialog();
-  else if (state.step !== 'intent') go('intent');
+  if (inReading()) {
+    pendingView = 'home';
+    openLeaveDialog();
+    return;
+  }
+  if (stage.dataset.view === 'guide') showHome();
+  if (state.step !== 'intent') go('intent');
 }));
+
+$('#guide-page').addEventListener('click', (event) => {
+  const filter = event.target.closest('[data-suit]');
+  if (filter) {
+    setGuideSuit(filter.dataset.suit);
+    return;
+  }
+  const card = event.target.closest('.guide-card');
+  if (card) openCardDetail(card.dataset.card, false, $('img', card));
+});
+
+$('.guide-filters').addEventListener('keydown', (event) => {
+  if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(event.key)) return;
+  const buttons = $$('[data-suit]', $('#guide-page'));
+  const index = buttons.findIndex((button) => button.getAttribute('aria-checked') === 'true');
+  const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
+  const next = buttons[(index + direction + buttons.length) % buttons.length];
+  event.preventDefault();
+  setGuideSuit(next.dataset.suit, next);
+});
+
+$('#guide-query').addEventListener('input', (event) => {
+  guideQuery = event.target.value;
+  renderGuide();
+});
+
+$('#guide-scroll').addEventListener('keydown', moveGuideFocus);
 
 Object.values(dialogs).forEach((dialog) => dialog.addEventListener('click', (event) => {
   if (event.target !== dialog) return;
   const rect = dialog.getBoundingClientRect();
   if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
 }));
-
-$('#mood').addEventListener('change', (event) => {
-  const [first, second] = MOODS[event.target.value];
-  const lines = $('.mood-copy').children;
-  lines[0].textContent = first;
-  lines[1].textContent = second;
-});
 
 // ---------- Yeniden boyutlandırma ----------
 

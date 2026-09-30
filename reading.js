@@ -160,14 +160,21 @@
       if (changed) save(list);
     }
 
+    // Bugünün günün kartları, eskiden yeniye. Ana ekran en son çekileni açar.
+    function todaysDailies(list, uid, date) {
+      return list
+        .filter((r) => r.spreadId === 'daily' && r.userId === uid && r.localDate === date && r.status !== 'abandoned')
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    }
+
     function createReading(input) {
       const spread = spreads.getSpread(input.spreadId);
       if (!spread) return Promise.reject(new Error('Bilinmeyen açılım'));
       const list = load();
       const uid = userId();
       const date = localDate(now());
-      if (spread.id === 'daily') {
-        const existing = list.find((r) => r.spreadId === 'daily' && r.userId === uid && r.localDate === date && r.status !== 'abandoned');
+      if (spread.id === 'daily' && !input.forceNew) {
+        const existing = todaysDailies(list, uid, date).at(-1);
         if (existing) return wait({ readingId: existing.id, cardCount: 1, existing: true });
       }
       if (spread.inputs.options === 'required' && (!clip(input.optionA, 40) || !clip(input.optionB, 40))) {
@@ -265,9 +272,7 @@
     }
 
     function dailyToday() {
-      const uid = userId();
-      const date = localDate(now());
-      const reading = load().find((r) => r.spreadId === 'daily' && r.userId === uid && r.localDate === date && r.status !== 'abandoned');
+      const reading = todaysDailies(load(), userId(), localDate(now())).at(-1);
       return wait(publicReading(reading));
     }
 
@@ -353,6 +358,115 @@
   const lower = (text) => text.charAt(0).toLocaleLowerCase('tr') + text.slice(1);
   const trimDot = (text) => text.replace(/[.\s]+$/, '');
   const wordCount = (text) => text.trim().split(/\s+/).filter(Boolean).length;
+
+  // Soru merceği serbest metni yorumlamaz; söz edimini sınıflar.
+  // closed: evet/hayır hükmü isteniyor. particular: yaşam alanı sözlüğünün
+  // dışında özel bir şey adlandırılmış ve o alanda başka bir konu yok.
+  // İkisi birden ("yeşil elmayı almam hayırlı mı") kartın o şeyi bildiğini iddia etmez.
+  const QUESTION_TOPICS = ['iş', 'kariyer', 'para', 'maaş', 'aşk', 'ilişki', 'sevgili', 'evlilik', 'ayrıl', 'karar', 'taşın', 'dikkat', 'gelecek', 'geçmiş', 'duygu', 'aile', 'anne', 'baba', 'arkadaş', 'okul', 'sınav', 'teklif', 'şehir', 'ev', 'borç', 'sağlık', 'kabul', 'çocuk', 'eş', 'patron'];
+  const QUESTION_VERBS = new Set(['al', 'et', 'yap', 'ol', 'gel', 'git', 'bak', 'seç', 'ver', 'kal', 'çık', 'düşün', 'bil', 'sor', 'iste', 'istem']);
+  const QUESTION_VERB_SUFFIXES = ['malıyım', 'meliyim', 'malıyız', 'meliyiz', 'malısın', 'melisin', 'malı', 'meli', 'mam', 'mem', 'maz', 'mez', 'mak', 'mek', 'acağım', 'eceğim', 'acak', 'ecek', 'ıyorum', 'iyorum', 'uyorum', 'üyorum', 'ıyor', 'iyor', 'uyor', 'üyor', 'dım', 'dim', 'dum', 'düm', 'tım', 'tim', 'tum', 'tüm', 'yım', 'yim', 'yum', 'yüm', 'sın', 'sin', 'sun', 'sün', 'lar', 'ler', 'ma', 'me', 'yı', 'yi', 'yu', 'yü'];
+  const QUESTION_FUNCTION = new Set(['bir', 'bu', 'şu', 'ne', 'neye', 'neyi', 'neden', 'niye', 'nasıl', 'için', 'ile', 've', 'veya', 'ben', 'sen', 'bana', 'sana', 'benim', 'senin', 'çok', 'daha', 'kadar', 'gibi', 'diye', 'yok', 'var', 'hiç', 'her', 'şey', 'hakkında', 'acaba', 'şimdi', 'bugün', 'yarın', 'sonra', 'önce', 'hayırlı', 'hayırsız', 'da', 'de', 'ki', 'ya', 'en', 'biraz', 'onu', 'ona', 'onun', 'beni', 'seni', 'bunu', 'şunu']);
+
+  function displayQuestion(raw) {
+    let text = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    text = text
+      .replace(/[!]+/g, ',')
+      .replace(/\.+/g, ',')
+      .replace(/\?+/g, '?')
+      .replace(/\s+,/g, ',')
+      .replace(/,+/g, ',')
+      .replace(/,(?=\S)/g, ', ')
+      .replace(/^[, \s]+/g, '')
+      .replace(/[, \s]+$/g, '')
+      .replace(/\s+\?/g, '?');
+    if (text.length > 90) {
+      const cut = text.slice(0, 90);
+      const space = cut.lastIndexOf(' ');
+      text = `${(space > 40 ? cut.slice(0, space) : cut).trim()}…`;
+    }
+    return text;
+  }
+
+  function questionTokens(raw) {
+    return String(raw || '')
+      .toLocaleLowerCase('tr')
+      .replace(/['’]/g, '')
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean);
+  }
+
+  function isQuestionParticle(token) {
+    return /^(?:mı|mi|mu|mü)$/.test(token) || /^m[ıiuü]y[ıiuü]m$/.test(token) || /^m[ıiuü]s[ıiuü]n$/.test(token) || /^m[ıiuü]y[ıiuü]z$/.test(token);
+  }
+
+  function isQuestionTopic(token) {
+    return QUESTION_TOPICS.some((topic) => {
+      if (!token.startsWith(topic)) return false;
+      const rest = token.slice(topic.length);
+      if (!rest) return true;
+      if (/^(?:l[ae]r)?(?:[dt][ae]n|[dt][ae]|n[aeıiuü]n|y?[aeıiuü]n|y?[aeıiuü]m|m|y?[aeıiuü]|s[ıiuü])$/.test(rest)) return true;
+      if (/^mal[ıi](?:y[ıi]m|s[ıi]n|y[ıi]z|lar)?$/.test(rest)) return true;
+      if (/^mel[ıi](?:y[ıi]m|s[ıi]n|y[ıi]z|ler)?$/.test(rest)) return true;
+      return /^(?:ma|me|mak|mek|ması|mesi)$/.test(rest);
+    });
+  }
+
+  function isQuestionVerb(token) {
+    let word = token;
+    if (QUESTION_VERBS.has(word)) return true;
+    for (let i = 0; i < 3; i++) {
+      const suffix = QUESTION_VERB_SUFFIXES.find((item) => word.length - item.length >= 2 && word.endsWith(item));
+      if (!suffix) return false;
+      word = word.slice(0, -suffix.length);
+      if (QUESTION_VERBS.has(word)) return true;
+    }
+    return false;
+  }
+
+  function readQuestion(raw) {
+    const text = displayQuestion(raw);
+    if (!text) return { text: '', closed: false, particular: false };
+    let topics = 0;
+    let unknowns = 0;
+    let closed = false;
+    for (const token of questionTokens(raw)) {
+      if (isQuestionParticle(token)) { closed = true; continue; }
+      if (QUESTION_FUNCTION.has(token)) continue;
+      if (isQuestionTopic(token)) { topics += 1; continue; }
+      if (isQuestionVerb(token)) continue;
+      if (token.length >= 3) unknowns += 1;
+    }
+    return { text, closed, particular: unknowns > 0 && topics === 0 };
+  }
+
+  function questionLens(reading, spread) {
+    if (spread && spread.inputs && spread.inputs.question === 'none') return readQuestion('');
+    return readQuestion(reading && reading.question);
+  }
+
+  function questionFrame(lens) {
+    if (!lens.text) return '';
+    const quote = `“${lens.text}”`;
+    if (lens.particular && lens.closed) return `${quote} Kartlar bunu tek tek bilmez; küçük bir tercih olarak okur ve hayırlı ya da hayırsız diye hüküm vermez.`;
+    if (lens.particular) return `${quote} Kartlar bunu tek tek bilmez; ona özel bir anlam yüklemez, küçük bir mesele olarak okur.`;
+    if (lens.closed) return `${quote} Kartlar bunu evet ya da hayır diye kesmez; eğilimi ve bedelini anlatır.`;
+    return `${quote} Kartlar buna bir liste değil, bir eğilim olarak cevap verir.`;
+  }
+
+  function questionSeat(lens, role) {
+    if (!lens.text || !role) return '';
+    if (role === 'first') {
+      if (lens.particular) return 'Bu yer o özel şeyi değil, bu seçimin nasıl kurulduğunu söyler.';
+      if (lens.closed) return 'Bu yer evet ya da hayır kesmez; eğilimin nereden geldiğini söyler.';
+      return 'Bu yer, sorduğun şeye kartın kendi anlamıyla cevap verir.';
+    }
+    if (lens.particular && lens.closed) return 'Kapanış da hüküm vermez; bu tercihteki eğilimi gösterir.';
+    if (lens.particular) return 'Kapanış o özel şeye anlam yüklemez; meselenin gidişatını gösterir.';
+    if (lens.closed) return 'Kapanış bir hüküm değil, bu sorudaki eğilimdir.';
+    return 'Sorduğun şeyin cevabı burada bir hüküm olarak değil, bir eğilim olarak toplanır.';
+  }
 
   function motor() {
     if (root.TAROT_ENGINE) return root.TAROT_ENGINE;
@@ -537,9 +651,10 @@
       optional.push('Bu bir Major Arcana kartı; bu yerde konu gündelik bir ayrıntıdan çok daha geniş bir döngüye işaret ediyor.');
     }
     optional.push(`Bu yerin sorusu şu: ${displayPrompt(position, reading)}`);
-    if (reading.question && position.index === 1) optional.push('Sorunla birlikte okununca bu yer, konunun nereden beslendiğine dair bir ipucu veriyor.');
+    const seat = position.index === 1 ? 'first' : position.index === spread.positions.length ? 'last' : '';
+    const bound = questionSeat(questionLens(reading, spread), seat);
 
-    const build = (body, extras) => [body, volume, ...links, ...extras, hedge].filter(Boolean).join(' ');
+    const build = (body, extras) => [body, volume, ...links, ...extras, bound, hedge].filter(Boolean).join(' ');
     let extras = optional.slice();
     let text = build(claim, extras);
     while (wordCount(text) > 140 && extras.length) {
@@ -626,7 +741,10 @@
   }
 
   function summaryFromPlan(plan, spread, reading, cardsApi) {
-    const lines = [placementSentence(spread, reading, cardsApi)];
+    const frame = questionFrame(questionLens(reading, spread));
+    const lines = [];
+    if (frame) lines.push(frame);
+    lines.push(placementSentence(spread, reading, cardsApi));
     const head = headlineSentence(plan.global.headline[0], plan.global, cardsApi);
     if (head) lines.push(head);
     if (lines.length < 3) lines.push(loudestSentence(plan, spread, reading, cardsApi));
@@ -736,7 +854,7 @@
     return result;
   }
 
-  const api = { createRng, randomSeed, deriveDeck, localDate, isCrisis, similarQuestions, createService, withRetry, signals, elementOf, interpret, displayLabel, displayPrompt, keywordsOf, memoryStorage };
+  const api = { createRng, randomSeed, deriveDeck, localDate, isCrisis, similarQuestions, createService, withRetry, signals, elementOf, interpret, displayLabel, displayPrompt, keywordsOf, readQuestion, memoryStorage };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.TAROT_READING = api;
 })(typeof window !== 'undefined' ? window : globalThis);

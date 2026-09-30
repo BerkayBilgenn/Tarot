@@ -1,0 +1,12 @@
+---
+description: Onaylanan kendine dön tarot tasarımını koru
+alwaysApply: true
+---
+
+- Bu proje onaylanmış görselin uygulamasıdır; yeniden tasarlama.
+- Referans assets/mockup-reference.png, masaüstü tasarım alanı 1586 × 992.
+- Kaynak görseli, sprite koordinatlarını, SVG maskesini ve data-lettering değerini kullanıcı istemedikçe değiştirme.
+- Krem/kobalt/altın paletini, Türkçe metinleri ve yerleşimi koru.
+- İstenmeyen framework, CDN, paket yöneticisi veya dış servis bağımlılığı ekleme.
+- Kart verisi cards.js içindeki 78 kartlık destedir. Açılıştaki Ay kartı mockup çizimidir; onu rastgele görselle değiştirme.
+- Kart seçimi, klavye erişimi, diyaloglar, mobil düzen ve azaltılmış hareket desteğini koru.

@@ -13,6 +13,7 @@
     },
     {
       id: 'three', name: 'Üç kart', cardCount: 3, estMinutes: 2, intents: ['general'],
+      blurb: 'Geçmişe, bugüne ve gidişata kısa bir bakış.',
       inputs: { question: 'optional' },
       positions: [
         pos(1, 'past', 'Geçmiş', 'Bu durumu buraya getiren ne?', 0, 0),
@@ -22,51 +23,55 @@
     },
     {
       id: 'relationship', name: 'İlişki', cardCount: 5, estMinutes: 4, intents: ['love'],
+      blurb: 'İkiniz arasındaki bağa, engele ve olasılığa bak.',
       inputs: { question: 'optional', personName: 'optional' },
       positions: [
         pos(1, 'self', 'Sen', 'Bu ilişkide senin enerjin ve tutumun ne?', 0, 1),
         pos(2, 'other', 'O', 'Karşı tarafın ilişkiye getirdiği enerji ne?', 2, 1),
         pos(3, 'bond', 'Aradaki bağ', 'İlişkinin şu anki doğası ne?', 1, 1),
         pos(4, 'obstacle', 'Engel', 'Önünüzdeki zorluk ne?', 1, 2),
-        pos(5, 'potential', 'Potansiyel', 'İlişki en iyi ihtimalle nereye gidebilir?', 1, 0),
+        pos(5, 'potential', 'Potansiyel', 'İlişki hangi yöne gelişebilir?', 1, 0),
       ],
     },
     {
       id: 'decision', name: 'Karar (İki yol)', cardCount: 5, estMinutes: 4, intents: ['decision'],
+      blurb: 'İki yolun nereye varabileceğini yan yana gör.',
       inputs: { question: 'optional', options: 'required' },
       positions: [
         pos(1, 'situation', 'Durum', 'Kararın özü ve şu anki tablo ne?', 1, 0),
         pos(2, 'a_path', 'A yolu', "A'yı seçersen süreç nasıl gelişir?", 0, 1),
-        pos(3, 'a_outcome', 'A sonucu', 'A seçeneği nereye varır?', 0, 2),
+        pos(3, 'a_outcome', 'A sonucu', 'A seçeneği nereye varabilir?', 0, 2),
         pos(4, 'b_path', 'B yolu', "B'yi seçersen süreç nasıl gelişir?", 2, 1),
-        pos(5, 'b_outcome', 'B sonucu', 'B seçeneği nereye varır?', 2, 2),
+        pos(5, 'b_outcome', 'B sonucu', 'B seçeneği nereye varabilir?', 2, 2),
       ],
     },
     {
-      id: 'career', name: 'Kariyer / Para', cardCount: 5, estMinutes: 4, intents: ['work'],
+      id: 'career', name: 'Kariyer & para', cardCount: 5, estMinutes: 4, intents: ['work'],
+      blurb: 'İşine, yönüne ve içindeki güce yeni bir yerden bak.',
       inputs: { question: 'optional' },
       positions: [
-        pos(1, 'current', 'Mevcut durum', 'İşte ya da parada şu an ne oluyor?', 0, 0),
-        pos(2, 'obstacle', 'Engel', 'Önündeki en büyük engel ne?', 1, 0),
-        pos(3, 'strength', 'Güçlü yan', 'Hangi gücüne dayanabilirsin?', 2, 0),
-        pos(4, 'advice', 'Tavsiye', 'Ne yapmalısın?', 0.5, 1),
-        pos(5, 'outcome', 'Gidişat', 'Bu yolda devam edersen nereye varırsın?', 1.5, 1),
+        { ...pos(1, 'current', 'Mevcut durum', 'İşte ya da parada şu an ne oluyor?', 0, 0), caption: 'Şu an neredesin?' },
+        { ...pos(2, 'obstacle', 'Engel', 'Önündeki en büyük engel ne?', 1, 0), caption: 'Seni ne durduruyor?' },
+        { ...pos(3, 'strength', 'Güçlü yan', 'Hangi gücüne dayanabilirsin?', 2, 0), caption: 'Neye güvenebilirsin?' },
+        { ...pos(4, 'advice', 'Tavsiye', 'Ne yapmalısın?', 3, 0), caption: 'Nasıl ilerlemelisin?' },
+        { ...pos(5, 'outcome', 'Gidişat', 'Bu yolda devam edersen nereye varırsın?', 4, 0), caption: 'Bu yol nereye gidebilir?' },
       ],
     },
     {
       id: 'celtic', name: 'Celtic Cross', cardCount: 10, estMinutes: 8, intents: ['general'],
+      blurb: 'Büyük resmi görmek için kendine bir alan aç.',
       inputs: { question: 'optional' },
       positions: [
-        pos(1, 'present', 'Mevcut durum', 'Sorunun kalbinde ne var?', 1, 1.5),
-        pos(2, 'challenge', 'Kesen kart', 'Duruma karışan güç ya da engel ne?', 1, 1.5, 90),
-        pos(3, 'crown', 'Taç', 'Bilinçli hedef ya da ulaşılabilecek en iyi sonuç ne?', 1, 0.5),
-        pos(4, 'root', 'Temel', 'Durumun altındaki kök sebep ne?', 1, 2.5),
-        pos(5, 'past', 'Yakın geçmiş', 'Geride kalan etki ne?', 0, 1.5),
-        pos(6, 'future', 'Yakın gelecek', 'Yakında ne geliyor?', 2, 1.5),
-        pos(7, 'self', 'Sen', 'Bu durumda tutumun ne?', 3.4, 3),
-        pos(8, 'environment', 'Çevre', 'Çevrendeki insanlar ve dış etkiler ne?', 3.4, 2),
-        pos(9, 'hopes_fears', 'Umutlar ve korkular', 'Neyi umuyor, neden korkuyorsun?', 3.4, 1),
-        pos(10, 'outcome', 'Sonuç', 'Gidişat devam ederse nereye varılır?', 3.4, 0),
+        { ...pos(1, 'present', 'Mevcut durum', 'Sorunun kalbinde ne var?', 1, 1.5), caption: 'Sorunun kalbinde ne var?' },
+        { ...pos(2, 'challenge', 'Kesen kart', 'Duruma karışan güç ya da engel ne?', 1, 1.5, 90), caption: 'Seni etkileyen güç ya da engel ne?' },
+        { ...pos(3, 'crown', 'Taç', 'Bilinçli hedef ya da ulaşılabilecek en iyi sonuç ne?', 1, 0.5), caption: 'Ulaşmak istediğin yer neresi?' },
+        { ...pos(4, 'root', 'Temel', 'Durumun altındaki kök sebep ne?', 1, 2.5), caption: 'Bu durumun kökünde ne var?' },
+        { ...pos(5, 'past', 'Yakın geçmiş', 'Geride kalan etki ne?', 0, 1.5), caption: 'Geride kalan hangi etki sürüyor?' },
+        { ...pos(6, 'future', 'Yakın gelecek', 'Yakında ne geliyor?', 2, 1.5), caption: 'Yakında ne beliriyor?' },
+        { ...pos(7, 'self', 'Sen', 'Bu durumda tutumun ne?', 3.4, 3), caption: 'Bu duruma nasıl yaklaşıyorsun?' },
+        { ...pos(8, 'environment', 'Çevre', 'Çevrendeki insanlar ve dış etkiler ne?', 3.4, 2), caption: 'Dışarıdan hangi etkiler geliyor?' },
+        { ...pos(9, 'hopes_fears', 'Umutlar ve korkular', 'Neyi umuyor, neden korkuyorsun?', 3.4, 1), caption: 'Neyi umuyor, neden çekiniyorsun?' },
+        { ...pos(10, 'outcome', 'Sonuç', 'Gidişat devam ederse nereye varılır?', 3.4, 0), caption: 'Bu yol seni nereye götürebilir?' },
       ],
     },
   ];
@@ -98,7 +103,16 @@
   const getSpread = (id) => BY_ID.get(id) || null;
   const chip = (spread) => `${spread.cardCount} kart · ${spread.estMinutes} dk`;
 
-  const api = { SPREADS, NARROW_SLOTS, INTENTS, PLACEHOLDERS, LIMITS, getSpread, chip };
+  // Rozet yalnızca position.index'ten gelir. Slot yeniden kullanıldığında da aynı değer yazılır.
+  function stampSlotBadge(slot, position) {
+    const value = String(position.index);
+    const badge = slot.querySelector('.lay-index');
+    const legendNum = slot.querySelector('.lay-num');
+    if (badge) badge.textContent = value;
+    if (legendNum) legendNum.textContent = value;
+  }
+
+  const api = { SPREADS, NARROW_SLOTS, INTENTS, PLACEHOLDERS, LIMITS, getSpread, chip, stampSlotBadge };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.TAROT_SPREADS = api;
 })(typeof window !== 'undefined' ? window : globalThis);

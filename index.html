@@ -6,19 +6,19 @@
   <meta name="theme-color" content="#fcf6e5">
   <meta name="description" content="Bir nefes al. Niyetini seç, kartlarını kendi elinle çek. Kendine dön.">
   <title>kendine dön · Tarot okuması</title>
-  <link rel="stylesheet" href="styles.css?v=12">
+  <link rel="stylesheet" href="styles.css?v=32">
   <script>document.documentElement.style.setProperty('--page-scale', innerWidth <= 900 ? 1 : Math.min(innerWidth / 1586, innerHeight / 992));</script>
   <script src="cards.js" defer></script>
-  <script src="spreads.js" defer></script>
-  <script src="yorum-motoru.js" defer></script>
+  <script src="spreads.js?v=2" defer></script>
+  <script src="yorum-motoru.js?v=2" defer></script>
   <script src="reading.js" defer></script>
-  <script src="app.js?v=12" defer></script>
+  <script src="app.js?v=21" defer></script>
 </head>
-<!-- reference: mockup'ın başlık çizimini korur. live: tüm başlıkları fontla çizer. -->
-<body data-lettering="reference">
+<!-- live: başlıklar yumuşak Fraunces ile çizilir. reference: mockup kırpmasını geri açar. -->
+<body data-lettering="live">
   <div class="stage-viewport">
     <div class="stage-fit">
-      <div class="stage" id="app" data-step="intent">
+      <div class="stage" id="app" data-step="intent" data-view="home">
       <div class="corner-art" aria-hidden="true"></div>
       <header class="header">
         <a class="brand" href="#acilim" aria-label="kendine dön, ana sayfa" data-nav="home">
@@ -27,7 +27,7 @@
         </a>
         <nav class="navigation" aria-label="Ana menü">
           <a class="nav-active" href="#acilim" aria-current="page" data-nav="home">Bir açılım yap</a>
-          <button id="open-guide" type="button">Kartları tanı</button>
+          <button id="open-guide" type="button" data-nav="guide">Kartları tanı</button>
           <button id="open-history" type="button">Okumalarım</button>
           <button id="open-settings" type="button">Ayarlar</button>
         </nav>
@@ -37,26 +37,14 @@
         <section class="intro" aria-labelledby="hero-title">
           <p class="eyebrow">KENDİNE BİR AN AYIR</p>
           <h1 class="hero-title" id="hero-title"><span>Biraz da</span><span>kendini</span><span>dinle.</span></h1>
-          <p class="intro-description">Bir nefes al. Seni çağıran kartları seç.</p>
-          <div class="mood-control">
-            <label for="mood">Bugün içinden geçen</label>
-            <div class="mood-field">
-              <div class="mood-copy" aria-hidden="true"><span>Güçlü görünüyorum.</span><span>Biraz yoruldum.</span></div>
-              <svg class="chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 9 7 7 7-7" stroke="currentColor" stroke-width="1.6"/></svg>
-              <select id="mood" name="mood">
-                <option value="tired">Güçlü görünüyorum. Biraz yoruldum.</option>
-                <option value="uncertain">Bir yol ayrımındayım. Kendimi duymak istiyorum.</option>
-                <option value="hopeful">İçimde bir umut var. Ona yer açmak istiyorum.</option>
-                <option value="quiet">Biraz yavaşlamak istiyorum. Kendime dönmek istiyorum.</option>
-              </select>
-            </div>
-          </div>
+          <p class="intro-description">Bir nefes al. Bugün kendine biraz daha yaklaş.</p>
         </section>
 
         <div class="portal-art" role="img" aria-label="Ay ışığında mavi merdivenli Akdeniz kemeri, çiçekler ve limonlar. Acele etme."></div>
 
         <section class="reading-panel" id="acilim" aria-labelledby="spread-title">
           <!-- Sadece çizimler bu SVG'de kalır. Kaynaktaki metinler ve kontroller maskelenir. -->
+          <div class="panel-veil" aria-hidden="true"></div>
           <svg class="panel-art" viewBox="0 0 1084 820" preserveAspectRatio="none" aria-hidden="true">
             <defs>
               <mask id="art-only-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="1084" height="820">
@@ -84,8 +72,15 @@
             <image href="assets/mockup-reference.png" x="-464" y="-115" width="1586" height="992" mask="url(#art-only-mask)"/>
           </svg>
           <div class="panel-heading">
+            <ol class="flow-steps" aria-label="Okuma adımları">
+              <li class="is-done"><span class="flow-mark" aria-hidden="true">✓</span><span class="flow-num">01</span> Niyetin</li>
+              <li class="is-current" aria-current="step"><span class="flow-mark" aria-hidden="true"></span><span class="flow-num">02</span> Kartların</li>
+              <li><span class="flow-mark" aria-hidden="true"></span><span class="flow-num">03</span> Yorumun</li>
+            </ol>
             <h2 id="spread-title" class="spread-title" tabindex="-1">Bugün ne öğrenmek istiyorsun?</h2>
+            <div id="spread-meta" hidden></div>
             <p id="instruction"></p>
+            <div id="depth-slot"></div>
           </div>
           <span class="progress-badge" id="progress" hidden></span>
 
@@ -100,38 +95,55 @@
               <button class="text-button" type="button" id="secondary" hidden></button>
             </div>
             <p class="selection-status" id="status" role="status" aria-live="polite" aria-atomic="true"></p>
-            <button class="interpret-button" type="button" id="primary" hidden></button>
+            <div class="action-end">
+              <button class="text-button reshuffle-button" type="button" id="reshuffle" hidden>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M20 4v5h-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Yeniden seç
+              </button>
+              <button class="interpret-button" type="button" id="primary" hidden></button>
+            </div>
           </div>
         </section>
         <p class="reassurance">Doğru ya da yanlış seçim yok. Sadece sana yakın gelen var.</p>
+        <section class="guide-page" id="guide-page" hidden aria-labelledby="guide-title">
+          <div class="guide-intro">
+            <p class="eyebrow">KARTLARIN DİLİ</p>
+            <h2 class="guide-title" id="guide-title" tabindex="-1"><span>Her kart,</span><span>başka bir</span><span>pencere.</span></h2>
+            <p class="guide-lead">Bir sembol, içinde zaten var olan bir düşünceye yer açabilir.</p>
+          </div>
+          <div class="guide-panel">
+            <div class="guide-toolbar">
+              <div class="guide-filters" role="radiogroup" aria-label="Deste">
+                <button type="button" role="radio" data-suit="all" aria-checked="true" tabindex="0">Tümü</button>
+                <button type="button" role="radio" data-suit="major" aria-checked="false" tabindex="-1">Büyük Arkana</button>
+                <button type="button" role="radio" data-suit="wands" aria-checked="false" tabindex="-1">Asalar</button>
+                <button type="button" role="radio" data-suit="cups" aria-checked="false" tabindex="-1">Kupalar</button>
+                <button type="button" role="radio" data-suit="swords" aria-checked="false" tabindex="-1">Kılıçlar</button>
+                <button type="button" role="radio" data-suit="pentacles" aria-checked="false" tabindex="-1">Tılsımlar</button>
+              </div>
+              <label class="guide-search">
+                <span class="sr-only">Kart ara</span>
+                <input id="guide-query" type="search" placeholder="Kart ara" autocomplete="off" enterkeyhint="search">
+              </label>
+            </div>
+            <p class="guide-note" id="guide-note"></p>
+            <div class="guide-scroll" id="guide-scroll"></div>
+          </div>
+        </section>
         <p class="sr-only" id="announcer" aria-live="assertive" aria-atomic="true"></p>
       </main>
       </div>
     </div>
   </div>
 
-  <dialog class="tarot-dialog" id="guide-dialog" aria-labelledby="guide-title">
+  <dialog class="tarot-dialog history-dialog" id="history-dialog" aria-labelledby="history-title">
     <form method="dialog"><button class="dialog-close" aria-label="Kapat">×</button></form>
-    <p class="eyebrow">KARTLARIN DİLİ</p>
-    <h2 id="guide-title">Her kart, başka bir pencere.</h2>
-    <p class="dialog-lead">Bir sembol, içinde zaten var olan bir düşünceye yer açabilir.</p>
-    <div class="guide-grid" id="guide-grid"></div>
-  </dialog>
-
-  <dialog class="tarot-dialog" id="spreads-dialog" aria-labelledby="spreads-title">
-    <form method="dialog"><button class="dialog-close" aria-label="Kapat">×</button></form>
-    <p class="eyebrow">AÇILIMLAR</p>
-    <h2 id="spreads-title">Tüm açılımlar</h2>
-    <ul class="spread-list" id="spread-list"></ul>
-  </dialog>
-
-  <dialog class="tarot-dialog" id="history-dialog" aria-labelledby="history-title">
-    <form method="dialog"><button class="dialog-close" aria-label="Kapat">×</button></form>
-    <p class="eyebrow">KAYITLI OKUMALAR</p>
-    <h2 id="history-title">Okumalarım</h2>
-    <label class="field history-filter"><span>Açılım</span>
-      <select id="history-filter"><option value="">Tüm açılımlar</option></select>
-    </label>
+    <div class="history-head">
+      <p class="eyebrow">KAYITLI OKUMALAR</p>
+      <h2 id="history-title">Okumalarım</h2>
+      <p class="history-count" id="history-count"></p>
+    </div>
+    <div class="history-filters" id="history-filters" role="radiogroup" aria-label="Açılım"></div>
     <ul class="history-list" id="history-list"></ul>
   </dialog>
 

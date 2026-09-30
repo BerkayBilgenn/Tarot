@@ -1,0 +1,427 @@
+[
+  {
+    "id": "daily",
+    "name": "Günün kartı",
+    "cardCount": 1,
+    "estMinutes": 1,
+    "intents": [
+      "today"
+    ],
+    "inputs": {
+      "question": "none"
+    },
+    "positions": [
+      {
+        "index": 1,
+        "key": "today",
+        "label": "Bugünün teması",
+        "prompt": "Bugün hangi enerjiye odaklanmalıyım, ne tavsiye ediliyor?",
+        "slot": {
+          "x": 0,
+          "y": 0,
+          "rot": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "three",
+    "name": "Üç kart",
+    "cardCount": 3,
+    "estMinutes": 2,
+    "intents": [
+      "general"
+    ],
+    "blurb": "Geçmişe, bugüne ve gidişata kısa bir bakış.",
+    "inputs": {
+      "question": "optional"
+    },
+    "positions": [
+      {
+        "index": 1,
+        "key": "past",
+        "label": "Geçmiş",
+        "prompt": "Bu durumu buraya getiren ne?",
+        "slot": {
+          "x": 0,
+          "y": 0,
+          "rot": 0
+        }
+      },
+      {
+        "index": 2,
+        "key": "present",
+        "label": "Şimdi",
+        "prompt": "Şu an ne oluyor?",
+        "slot": {
+          "x": 1,
+          "y": 0,
+          "rot": 0
+        }
+      },
+      {
+        "index": 3,
+        "key": "future",
+        "label": "Gelecek",
+        "prompt": "Mevcut gidişat nereye varıyor?",
+        "slot": {
+          "x": 2,
+          "y": 0,
+          "rot": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "relationship",
+    "name": "İlişki",
+    "cardCount": 5,
+    "estMinutes": 4,
+    "intents": [
+      "love"
+    ],
+    "blurb": "İkiniz arasındaki bağa, engele ve olasılığa bak.",
+    "inputs": {
+      "question": "optional",
+      "personName": "optional"
+    },
+    "positions": [
+      {
+        "index": 1,
+        "key": "self",
+        "label": "Sen",
+        "prompt": "Bu ilişkide senin enerjin ve tutumun ne?",
+        "slot": {
+          "x": 0,
+          "y": 1,
+          "rot": 0
+        }
+      },
+      {
+        "index": 2,
+        "key": "other",
+        "label": "O",
+        "prompt": "Karşı tarafın ilişkiye getirdiği enerji ne?",
+        "slot": {
+          "x": 2,
+          "y": 1,
+          "rot": 0
+        }
+      },
+      {
+        "index": 3,
+        "key": "bond",
+        "label": "Aradaki bağ",
+        "prompt": "İlişkinin şu anki doğası ne?",
+        "slot": {
+          "x": 1,
+          "y": 1,
+          "rot": 0
+        }
+      },
+      {
+        "index": 4,
+        "key": "obstacle",
+        "label": "Engel",
+        "prompt": "Önünüzdeki zorluk ne?",
+        "slot": {
+          "x": 1,
+          "y": 2,
+          "rot": 0
+        }
+      },
+      {
+        "index": 5,
+        "key": "potential",
+        "label": "Potansiyel",
+        "prompt": "İlişki hangi yöne gelişebilir?",
+        "slot": {
+          "x": 1,
+          "y": 0,
+          "rot": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "decision",
+    "name": "Karar (İki yol)",
+    "cardCount": 5,
+    "estMinutes": 4,
+    "intents": [
+      "decision"
+    ],
+    "blurb": "İki yolun nereye varabileceğini yan yana gör.",
+    "inputs": {
+      "question": "optional",
+      "options": "required"
+    },
+    "positions": [
+      {
+        "index": 1,
+        "key": "situation",
+        "label": "Durum",
+        "prompt": "Kararın özü ve şu anki tablo ne?",
+        "slot": {
+          "x": 1,
+          "y": 0,
+          "rot": 0
+        }
+      },
+      {
+        "index": 2,
+        "key": "a_path",
+        "label": "A yolu",
+        "prompt": "A'yı seçersen süreç nasıl gelişir?",
+        "slot": {
+          "x": 0,
+          "y": 1,
+          "rot": 0
+        }
+      },
+      {
+        "index": 3,
+        "key": "a_outcome",
+        "label": "A sonucu",
+        "prompt": "A seçeneği nereye varabilir?",
+        "slot": {
+          "x": 0,
+          "y": 2,
+          "rot": 0
+        }
+      },
+      {
+        "index": 4,
+        "key": "b_path",
+        "label": "B yolu",
+        "prompt": "B'yi seçersen süreç nasıl gelişir?",
+        "slot": {
+          "x": 2,
+          "y": 1,
+          "rot": 0
+        }
+      },
+      {
+        "index": 5,
+        "key": "b_outcome",
+        "label": "B sonucu",
+        "prompt": "B seçeneği nereye varabilir?",
+        "slot": {
+          "x": 2,
+          "y": 2,
+          "rot": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "career",
+    "name": "Kariyer & para",
+    "cardCount": 5,
+    "estMinutes": 4,
+    "intents": [
+      "work"
+    ],
+    "blurb": "İşine, yönüne ve içindeki güce yeni bir yerden bak.",
+    "inputs": {
+      "question": "optional"
+    },
+    "positions": [
+      {
+        "index": 1,
+        "key": "current",
+        "label": "Mevcut durum",
+        "prompt": "İşte ya da parada şu an ne oluyor?",
+        "slot": {
+          "x": 0,
+          "y": 0,
+          "rot": 0
+        },
+        "caption": "Şu an neredesin?"
+      },
+      {
+        "index": 2,
+        "key": "obstacle",
+        "label": "Engel",
+        "prompt": "Önündeki en büyük engel ne?",
+        "slot": {
+          "x": 1,
+          "y": 0,
+          "rot": 0
+        },
+        "caption": "Seni ne durduruyor?"
+      },
+      {
+        "index": 3,
+        "key": "strength",
+        "label": "Güçlü yan",
+        "prompt": "Hangi gücüne dayanabilirsin?",
+        "slot": {
+          "x": 2,
+          "y": 0,
+          "rot": 0
+        },
+        "caption": "Neye güvenebilirsin?"
+      },
+      {
+        "index": 4,
+        "key": "advice",
+        "label": "Tavsiye",
+        "prompt": "Ne yapmalısın?",
+        "slot": {
+          "x": 3,
+          "y": 0,
+          "rot": 0
+        },
+        "caption": "Nasıl ilerlemelisin?"
+      },
+      {
+        "index": 5,
+        "key": "outcome",
+        "label": "Gidişat",
+        "prompt": "Bu yolda devam edersen nereye varırsın?",
+        "slot": {
+          "x": 4,
+          "y": 0,
+          "rot": 0
+        },
+        "caption": "Bu yol nereye gidebilir?"
+      }
+    ]
+  },
+  {
+    "id": "celtic",
+    "name": "Celtic Cross",
+    "cardCount": 10,
+    "estMinutes": 8,
+    "intents": [
+      "general"
+    ],
+    "blurb": "Büyük resmi görmek için kendine bir alan aç.",
+    "inputs": {
+      "question": "optional"
+    },
+    "positions": [
+      {
+        "index": 1,
+        "key": "present",
+        "label": "Mevcut durum",
+        "prompt": "Sorunun kalbinde ne var?",
+        "slot": {
+          "x": 1,
+          "y": 1.5,
+          "rot": 0
+        },
+        "caption": "Sorunun kalbinde ne var?"
+      },
+      {
+        "index": 2,
+        "key": "challenge",
+        "label": "Kesen kart",
+        "prompt": "Duruma karışan güç ya da engel ne?",
+        "slot": {
+          "x": 1,
+          "y": 1.5,
+          "rot": 90
+        },
+        "caption": "Seni etkileyen güç ya da engel ne?"
+      },
+      {
+        "index": 3,
+        "key": "crown",
+        "label": "Taç",
+        "prompt": "Bilinçli hedef ya da ulaşılabilecek en iyi sonuç ne?",
+        "slot": {
+          "x": 1,
+          "y": 0.5,
+          "rot": 0
+        },
+        "caption": "Ulaşmak istediğin yer neresi?"
+      },
+      {
+        "index": 4,
+        "key": "root",
+        "label": "Temel",
+        "prompt": "Durumun altındaki kök sebep ne?",
+        "slot": {
+          "x": 1,
+          "y": 2.5,
+          "rot": 0
+        },
+        "caption": "Bu durumun kökünde ne var?"
+      },
+      {
+        "index": 5,
+        "key": "past",
+        "label": "Yakın geçmiş",
+        "prompt": "Geride kalan etki ne?",
+        "slot": {
+          "x": 0,
+          "y": 1.5,
+          "rot": 0
+        },
+        "caption": "Geride kalan hangi etki sürüyor?"
+      },
+      {
+        "index": 6,
+        "key": "future",
+        "label": "Yakın gelecek",
+        "prompt": "Yakında ne geliyor?",
+        "slot": {
+          "x": 2,
+          "y": 1.5,
+          "rot": 0
+        },
+        "caption": "Yakında ne beliriyor?"
+      },
+      {
+        "index": 7,
+        "key": "self",
+        "label": "Sen",
+        "prompt": "Bu durumda tutumun ne?",
+        "slot": {
+          "x": 3.4,
+          "y": 3,
+          "rot": 0
+        },
+        "caption": "Bu duruma nasıl yaklaşıyorsun?"
+      },
+      {
+        "index": 8,
+        "key": "environment",
+        "label": "Çevre",
+        "prompt": "Çevrendeki insanlar ve dış etkiler ne?",
+        "slot": {
+          "x": 3.4,
+          "y": 2,
+          "rot": 0
+        },
+        "caption": "Dışarıdan hangi etkiler geliyor?"
+      },
+      {
+        "index": 9,
+        "key": "hopes_fears",
+        "label": "Umutlar ve korkular",
+        "prompt": "Neyi umuyor, neden korkuyorsun?",
+        "slot": {
+          "x": 3.4,
+          "y": 1,
+          "rot": 0
+        },
+        "caption": "Neyi umuyor, neden çekiniyorsun?"
+      },
+      {
+        "index": 10,
+        "key": "outcome",
+        "label": "Sonuç",
+        "prompt": "Gidişat devam ederse nereye varılır?",
+        "slot": {
+          "x": 3.4,
+          "y": 0,
+          "rot": 0
+        },
+        "caption": "Bu yol seni nereye götürebilir?"
+      }
+    ]
+  }
+]

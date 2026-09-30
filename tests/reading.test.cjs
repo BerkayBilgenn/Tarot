@@ -89,6 +89,23 @@ test('daily card is drawn once per local date', async () => {
   assert.notEqual((await svc.createReading({ spreadId: 'daily' })).readingId, a.readingId);
 });
 
+test('an explicit new daily reading draws again instead of reopening today', async () => {
+  const { svc } = service();
+  const first = await svc.createReading({ spreadId: 'daily' });
+  await svc.pick(first.readingId, 0, 4);
+  await svc.complete(first.readingId);
+  await svc.markViewed(first.readingId);
+  const second = await svc.createReading({ spreadId: 'daily', forceNew: true });
+  assert.equal(second.existing, false);
+  assert.notEqual(second.readingId, first.readingId);
+  await svc.pick(second.readingId, 0, 19);
+  const replay = await svc.createReading({ spreadId: 'daily' });
+  assert.equal(replay.existing, true);
+  assert.equal(replay.readingId, second.readingId);
+  assert.equal((await svc.dailyToday()).id, second.readingId);
+  assert.equal((await svc.dailyToday()).cards[0].fanIndex, 19);
+});
+
 test('drafts resume, expire after 7 days and completed readings reach history', async () => {
   const { svc, clock } = service();
   const { readingId } = await svc.createReading({ spreadId: 'three', question: 'Bu dönem bana ne getirecek?' });
@@ -200,6 +217,80 @@ test('signals count majors, reversals, elements and repeated ranks', () => {
   for (const card of cards.MAJOR) assert.ok(R.elementOf(card), card.id);
 });
 
+function threeReading(question) {
+  return {
+    reversalsEnabled: false,
+    question,
+    cards: [
+      { positionKey: 'past', cardId: 'swords-06', reversed: false },
+      { positionKey: 'present', cardId: 'major-16', reversed: false },
+      { positionKey: 'future', cardId: 'major-17', reversed: false },
+    ],
+  };
+}
+
+test('a question is classified by speech act, not by inventing the noun', () => {
+  const apple = R.readQuestion('Yeşil elmayı almam hayırlı mı?');
+  assert.equal(apple.closed, true);
+  assert.equal(apple.particular, true);
+  assert.match(apple.text, /Yeşil elmayı almam hayırlı mı/);
+
+  const job = R.readQuestion('işten ayrılmalı mıyım');
+  assert.equal(job.closed, true);
+  assert.equal(job.particular, false);
+
+  const move = R.readQuestion("İstanbul'a taşınmalı mıyım?");
+  assert.equal(move.closed, true);
+  assert.equal(move.particular, false, 'a named place inside a life-domain question is not an unknown object');
+
+  const open = R.readQuestion('Neye dikkat etmeliyim?');
+  assert.equal(open.closed, false);
+  assert.equal(open.particular, false);
+
+  assert.equal(R.readQuestion('   ').text, '');
+});
+
+test('the same cards answer the question that was asked', () => {
+  const spread = spreads.getSpread('three');
+  const apple = R.interpret(threeReading('Yeşil elmayı almam hayırlı mı?'), spread, cards);
+  const job = R.interpret(threeReading('işten ayrılmalı mıyım'), spread, cards);
+  const open = R.interpret(threeReading('Neye dikkat etmeliyim?'), spread, cards);
+  const bare = R.interpret(threeReading(''), spread, cards);
+  const sentences = (summary) => summary.split(/(?<=\.)\s/).length;
+
+  assert.match(apple.summary, /Yeşil elmayı almam hayırlı mı/);
+  assert.match(apple.summary, /tek tek bilmez/);
+  assert.match(apple.summary, /hüküm vermez/);
+  assert.doesNotMatch(apple.summary, /hayırlıdır|hayırsızdır|bereket/);
+  assert.match(job.summary, /işten ayrılmalı mıyım/);
+  assert.match(job.summary, /evet ya da hayır/);
+  assert.doesNotMatch(job.summary, /bilmez/);
+  assert.match(open.summary, /Neye dikkat etmeliyim/);
+  assert.doesNotMatch(open.summary, /bilmez|evet ya da hayır/);
+  assert.doesNotMatch(bare.summary, /bilmez|“/);
+
+  for (const result of [apple, job, open, bare]) {
+    assert.ok(sentences(result.summary) >= 2 && sentences(result.summary) <= 3);
+    for (const position of result.positions) assert.doesNotMatch(position.text, /olacak\b/);
+  }
+
+  const text = (result, key) => result.positions.find((position) => position.positionKey === key).text;
+  assert.match(text(apple, 'past'), /seçimin nasıl kurulduğunu/);
+  assert.match(text(apple, 'future'), /hüküm vermez/);
+  assert.doesNotMatch(text(apple, 'present'), /bilmez|hüküm vermez|seçimin nasıl/);
+  assert.equal(text(apple, 'present'), text(job, 'present'));
+  assert.notEqual(apple.summary, job.summary);
+  assert.notEqual(text(apple, 'past'), text(job, 'past'));
+  assert.match(text(open, 'past'), /sorduğun/);
+  assert.match(text(job, 'future'), /Kapanış bir hüküm değil/);
+
+  const daily = R.interpret({
+    question: 'Yeşil elmayı almam hayırlı mı?',
+    cards: [{ positionKey: 'today', cardId: 'cups-01', reversed: false }],
+  }, spreads.getSpread('daily'), cards);
+  assert.doesNotMatch(daily.summary, /bilmez|Yeşil elma/);
+});
+
 test('crisis and repeated-question detection', async () => {
   assert.equal(R.isCrisis('Artık yaşamak istemiyorum'), true);
   assert.equal(R.isCrisis('Yeni iş teklifi hakkında neyi bilmeliyim?'), false);
@@ -211,6 +302,102 @@ test('crisis and repeated-question detection', async () => {
   assert.equal(svc.recentSimilar('career', 'Bu ilişki nereye gidiyor'), false);
   clock.set('2026-09-30T09:00:01');
   assert.equal(svc.recentSimilar('relationship', 'Bu ilişki nereye gidiyor'), false);
+});
+
+function fakeSlot(badge, num) {
+  const nodes = {
+    '.lay-index': { textContent: String(badge) },
+    '.lay-num': { textContent: String(num) },
+  };
+  return { querySelector: (selector) => nodes[selector], nodes };
+}
+
+const PAGE_SPREADS = ['three', 'relationship', 'decision', 'career', 'celtic'];
+
+test('badges are 1..N, unique, and the same numbers as the legend', () => {
+  for (const id of PAGE_SPREADS) {
+    const spread = spreads.getSpread(id);
+    const slots = spread.positions.map(() => fakeSlot('stale', 'stale'));
+    spread.positions.forEach((position, i) => spreads.stampSlotBadge(slots[i], position));
+    const badges = slots.map((slot) => slot.nodes['.lay-index'].textContent);
+    const legend = slots.map((slot) => slot.nodes['.lay-num'].textContent);
+    assert.deepEqual(badges, legend);
+    assert.deepEqual(badges, spread.positions.map((position) => String(position.index)));
+    assert.deepEqual(badges, Array.from({ length: spread.cardCount }, (_, i) => String(i + 1)));
+    assert.equal(new Set(badges).size, spread.cardCount);
+  }
+});
+
+test('a reused three-card slot takes the Celtic Cross index, not the old row count', () => {
+  const three = spreads.getSpread('three');
+  const celtic = spreads.getSpread('celtic');
+  const slots = new Map(three.positions.map((position) => [position.key, fakeSlot(position.index, position.index)]));
+  for (const position of celtic.positions) {
+    if (!slots.has(position.key)) slots.set(position.key, fakeSlot('', ''));
+    spreads.stampSlotBadge(slots.get(position.key), position);
+  }
+  const badge = (key) => slots.get(key).nodes['.lay-index'].textContent;
+  assert.deepEqual(
+    ['present', 'challenge', 'crown', 'root', 'past', 'future', 'self', 'environment', 'hopes_fears', 'outcome'].map(badge),
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+  );
+});
+
+test('layout refresh writes the badge from position.index', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  const fn = src.slice(src.indexOf('function updateSlotLabel'), src.indexOf('function setSlotCard'));
+  assert.match(fn, /stampSlotBadge\(slot, position\)/);
+  assert.doesNotMatch(fn, /slotIndex|\[\s*,\s*i\s*\]/);
+});
+
+test('ten celtic picks bind to position keys in index order', async () => {
+  const celtic = spreads.getSpread('celtic');
+  const { svc } = service();
+  const { readingId } = await svc.createReading({ spreadId: 'celtic' });
+  const keys = [];
+  for (let i = 0; i < celtic.cardCount; i++) keys.push((await svc.pick(readingId, i, i)).positionKey);
+  assert.deepEqual(keys, celtic.positions.map((position) => position.key));
+  assert.deepEqual(keys, ['present', 'challenge', 'crown', 'root', 'past', 'future', 'self', 'environment', 'hopes_fears', 'outcome']);
+  const reading = await svc.get(readingId);
+  assert.deepEqual(reading.cards.map((card) => card.positionKey), keys);
+});
+
+test('career is one row and its graph is a chain', () => {
+  const career = spreads.getSpread('career');
+  assert.deepEqual(career.positions.map((position) => [position.slot.x, position.slot.y]), [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]]);
+  const engine = require('../yorum-motoru.js');
+  const layout = engine.layoutById('career');
+  assert.deepEqual(layout.order, ['current', 'obstacle', 'strength', 'advice', 'outcome']);
+  assert.deepEqual(layout.arcs, [['current', 'obstacle', 'strength', 'advice', 'outcome']]);
+  assert.deepEqual(layout.dignity, [
+    { principal: 'current', flankers: ['obstacle'] },
+    { principal: 'obstacle', flankers: ['current', 'strength'] },
+    { principal: 'strength', flankers: ['obstacle', 'advice'] },
+    { principal: 'advice', flankers: ['strength', 'outcome'] },
+    { principal: 'outcome', flankers: ['advice'] },
+  ]);
+  assert.deepEqual(layout.links, [
+    ['current', 'obstacle', 'chain'],
+    ['obstacle', 'strength', 'chain'],
+    ['strength', 'advice', 'chain'],
+    ['advice', 'outcome', 'chain'],
+  ]);
+  assert.deepEqual(layout.axes, []);
+  assert.deepEqual(layout.mirrors, [['current', 'outcome'], ['obstacle', 'advice']]);
+  assert.deepEqual(layout.echoes, []);
+});
+
+test('outcome questions are not written as fate', () => {
+  const banned = [
+    'İlişki en iyi ihtimalle nereye gidebilir?',
+    'Bu yol nereye gider?',
+    'A seçeneği nereye varır?',
+    'B seçeneği nereye varır?',
+    'İki yolun da nereye vardığını yan yana gör.',
+  ];
+  const files = ['spreads.js', 'spec/spreads.json', 'spec/Tarot-Okuma-Akisi-Spec.md', 'reading.js', 'app.js', 'yorum-motoru.js'];
+  const blob = files.map((file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8')).join('\n');
+  for (const phrase of banned) assert.equal(blob.includes(phrase), false, phrase);
 });
 
 test('retry stops on validation errors but retries transient ones', async () => {
