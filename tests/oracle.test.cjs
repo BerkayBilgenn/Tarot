@@ -33,3 +33,18 @@ test('the closing brief carries the question, the seats and the bans', () => {
   assert.equal(oracle.MODEL, 'deepseek-ai/deepseek-v4.1-flash');
   assert.equal(oracle.ENDPOINT, 'http://127.0.0.1:18791/closing');
 });
+
+test('the template closing tells the spread as a story and ends with the cards\' questions', () => {
+  const notes = require('../card-notes.js');
+  const spread = spreads.getSpread('celtic');
+  const reading = {
+    question: 'Hayatımda şu an en çok neye odaklanmalıyım?',
+    cards: spread.positions.map((position, i) => ({ positionKey: position.key, cardId: cards.CARDS[(i * 11 + 4) % 78].id, reversed: i % 4 === 3 })),
+  };
+  const essay = oracle.longClosing(reading, spread, cards);
+  for (const beat of ['Haçın kalbinde', 'Kökte', 'Sağdaki sütun', 'Gidişatın vardığı yerde', 'kendine şunu sorabilirsin']) assert.match(essay, new RegExp(beat));
+  const present = reading.cards.find((c) => c.positionKey === 'present');
+  assert.ok(essay.includes(notes.noteOf(present.cardId).ask), 'the heart card asks its own question');
+  assert.doesNotMatch(essay, /olacak\b|undefined/);
+  assert.ok(essay.split('\n\n').length >= 6);
+});

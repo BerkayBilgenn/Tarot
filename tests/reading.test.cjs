@@ -140,8 +140,10 @@ test('template interpretation follows the writing rules', async () => {
     assert.ok(sentences >= 2 && sentences <= 3, `${spread.id} summary has ${sentences} sentences`);
     for (const p of result.positions) {
       const words = p.text.split(/\s+/).length;
-      assert.ok(words >= 60 && words <= 140, `${spread.id}.${p.positionKey}: ${words} words`);
+      assert.ok(words >= 12 && words <= 110, `${spread.id}.${p.positionKey}: ${words} words`);
       assert.doesNotMatch(p.text, /olacak\b/);
+      assert.ok(p.meaning && p.themes && p.seat, `${spread.id}.${p.positionKey} carries meaning, themes and seat`);
+      assert.doesNotMatch(p.text, /nitelik|koltuğun|tona çekiyor/, 'engine jargon stays out of the reader text');
     }
     if (spread.id === 'celtic') assert.equal(result.pairs.length, 5);
     if (spread.id === 'decision') assert.ok(result.comparison.a.startsWith('İstanbul') && result.comparison.b.startsWith('Berlin'));
@@ -194,8 +196,8 @@ test('contextual plan changes how the same cards are read', () => {
   assert.equal(flipped.plan.positions.find((position) => position.key === 'present').volume.band, 'very_loud');
   assert.notEqual(flipped.positions[1].text, result.positions[1].text);
   assert.notEqual(flipped.summary, result.summary);
-  assert.match(result.summary, /Geçmiş: Kılıç Altılısı/);
-  assert.match(flipped.summary, /Geçmiş: Yıkılan Kule/);
+  assert.match(result.summary, /Okumanın kalbinde Şimdi yerindeki Yıkılan Kule/);
+  assert.match(flipped.summary, /Okumanın kalbinde Gelecek yerindeki Yıldız/);
 });
 
 test('the same card says a different thing in a different seat', () => {
@@ -211,10 +213,11 @@ test('the same card says a different thing in a different seat', () => {
   }, spread, cards);
   const pastText = asPast.positions.find((position) => position.positionKey === 'past').text;
   const futureText = asFuture.positions.find((position) => position.positionKey === 'future').text;
-  assert.match(pastText, /geçmişin yerinde/);
-  assert.match(futureText, /geleceğin yerinde/);
-  assert.doesNotMatch(pastText, /geleceğin yerinde/);
-  assert.doesNotMatch(futureText, /geçmişin yerinde/);
+  assert.match(pastText, /geçmişin yerinde/i);
+  assert.match(futureText, /geleceğin yerinde/i);
+  assert.doesNotMatch(pastText, /geleceğin yerinde/i);
+  assert.doesNotMatch(futureText, /geçmişin yerinde/i);
+  assert.notEqual(asPast.positions.find((p) => p.positionKey === 'past').themes, undefined);
 });
 
 test('signals count majors, reversals, elements and repeated ranks', () => {
@@ -294,7 +297,7 @@ test('the same cards answer the question that was asked', () => {
   assert.equal(text(apple, 'present'), text(job, 'present'));
   assert.notEqual(apple.summary, job.summary);
   assert.notEqual(text(apple, 'past'), text(job, 'past'));
-  assert.match(text(open, 'past'), /sorduğun/);
+  assert.match(text(open, 'past'), /sorduğun/i);
   assert.match(text(job, 'future'), /Kapanış bir hüküm değil/);
 
   const daily = R.interpret({
@@ -419,4 +422,60 @@ test('retry stops on validation errors but retries transient ones', async () => 
   assert.equal(calls, 1);
   calls = 0;
   assert.equal(await R.withRetry(() => (++calls < 3 ? Promise.reject(new Error('ağ')) : Promise.resolve('ok'))), 'ok');
+});
+
+test('a hard card in a supporting seat is read as a hard card, a kind card in an obstacle as a kind one', () => {
+  const spread = spreads.getSpread('career');
+  const seat = (key, cardId, reversed = false) => ({ positionKey: key, cardId, reversed });
+  const result = R.interpret({
+    reversalsEnabled: true,
+    cards: [seat('current', 'cups-10'), seat('obstacle', 'wands-06'), seat('strength', 'swords-02'), seat('advice', 'pentacles-05'), seat('outcome', 'major-16')],
+  }, spread, cards);
+  const text = (key) => result.positions.find((p) => p.positionKey === key).text;
+  assert.match(text('strength'), /Güç yerinde zorlu bir kart var/);
+  assert.doesNotMatch(text('strength'), /Dayanabileceğin güç karar/);
+  assert.match(text('advice'), /Tavsiye yerinde zorlu bir kart var/);
+  assert.match(text('obstacle'), /Engel yerinde aslında olumlu bir kart var/);
+  assert.match(text('outcome'), /uyarı/);
+  assert.equal(R.toneOf(cards.getCard('swords-10'), true), 'soft', 'the reverse of a hard card is relief');
+});
+
+test('keywords come from the card meaning, not from the number theme', () => {
+  const kw = (id, reversed = false) => R.keywordsOf(cards.getCard(id), reversed);
+  assert.ok(kw('swords-03').includes('kalp kırıklığı'));
+  assert.ok(!kw('swords-03').includes('işbirliği'));
+  assert.deepEqual(kw('major-00'), cards.getCard('major-00').keywords.slice(0, 3));
+  assert.ok(kw('major-00', true).includes('düşüncesizlik'), 'a reversed major speaks from its reversed meaning');
+  for (const card of cards.CARDS) for (const reversed of [false, true]) assert.ok(kw(card.id, reversed).length >= 2, `${card.id} ${reversed}`);
+});
+
+test('themes keep the main reading and never stack two "ve"', () => {
+  assert.equal(R.themesOf(cards.getCard('major-18'), true), 'korkuların çözülmesi ve gerçeğin ortaya çıkması');
+  assert.doesNotMatch(R.themesOf(cards.getCard('major-19'), false), /kartı/);
+  for (const card of cards.CARDS) for (const reversed of [false, true]) {
+    const themes = R.themesOf(card, reversed);
+    assert.ok(themes && !/ ve .* ve /.test(themes), `${card.id} ${reversed}: ${themes}`);
+  }
+});
+
+test('an open "neye / nasıl" question is never read as a particular object', () => {
+  assert.equal(R.readQuestion('Hayatımda şu an en çok neye odaklanmalıyım?').particular, false);
+  assert.equal(R.readQuestion('Yeşil elmayı almam hayırlı mı?').particular, true);
+});
+
+test('an old cached template text is upgraded, a model-written closing is kept', async () => {
+  const storage = R.memoryStorage();
+  const { svc } = service({ storage });
+  const { readingId } = await svc.createReading({ spreadId: 'three', question: 'Neye dikkat etmeliyim?' });
+  for (let i = 0; i < 3; i++) await svc.pick(readingId, i, i * 5);
+  await svc.complete(readingId);
+  const list = JSON.parse(storage.getItem('kd.readings.v1'));
+  Object.assign(list[0].interpretation, { textVersion: undefined, closing: 'Usta bu okumayı böyle bağladı.', closingSource: 'llm', closingVoice: 'okuma-3' });
+  list[0].interpretation.positions.forEach((p) => { delete p.seat; p.text = 'eski metin'; });
+  storage.setItem('kd.readings.v1', JSON.stringify(list));
+  const upgraded = await svc.complete(readingId);
+  assert.equal(upgraded.textVersion, R.TEXT_VERSION);
+  assert.ok(upgraded.positions.every((p) => p.seat && p.text !== 'eski metin'));
+  assert.equal(upgraded.closing, 'Usta bu okumayı böyle bağladı.');
+  assert.equal(upgraded.closingSource, 'llm');
 });

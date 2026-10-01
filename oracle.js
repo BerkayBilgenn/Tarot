@@ -47,7 +47,7 @@
     return lines.join('\n');
   }
 
-  const VOICE = 'okuma-3';
+  const VOICE = 'okuma-4';
 
   function soften(bit) {
     const text = String(bit || '').replace(/\s+/g, ' ').replace(/^[“"'\s]+|[”"'\s.]+$/g, '').trim();
@@ -80,14 +80,6 @@
     return ' Ölüm burada bedensel bir son değildir; bir dönemin kapanması ya da bir dönüşüm olabilir.';
   }
 
-  function seatReading(item, when) {
-    const list = listTr(clauses(item.meaning));
-    const turn = item.pick.reversed
-      ? `Ters geldiği için bu, dışarıda büyük bir olaydan çok bir gecikme, bir engel ya da içine çekilen bir hal olabilir.`
-      : `Düz geldiği için bu hal gizlenmeden, bu dönemin içinde görünebilir.`;
-    return `${item.position.label} tarafında ${item.card.nameTr} (${item.card.name}) duruyor. ${when} burada ${list} olabilir. ${turn}${deathNote(item.card)}`;
-  }
-
   function dailyEssay(item) {
     const bits = clauses(item.meaning);
     const list = listTr(bits);
@@ -102,29 +94,95 @@
     ].join('\n\n');
   }
 
-  function longClosing(reading, spread, cardsApi) {
-    const seats = spread.positions.map((position) => {
+  const reader = () => root.TAROT_READING || require('./reading.js');
+  const notes = () => root.TAROT_NOTES || require('./card-notes.js');
+
+  // Kapanış kartları tek tek saymaz; açılımın hikâyesini anlatır: nereden gelindi, düğüm nerede,
+  // hangi güce dayanılır, yol nereye eğiliyor. Sonda iki kartın sorusu kişiye bırakılır.
+  function seatsOf(reading, spread, cardsApi) {
+    const map = {};
+    spread.positions.forEach((position) => {
       const pick = reading.cards.find((card) => card.positionKey === position.key);
       const card = cardsApi.getCard(pick.cardId);
-      const meaning = String(pick.reversed ? card.reversed : card.upright);
-      return { position, pick, card, meaning };
+      map[position.key] = {
+        position, pick, card,
+        name: `${card.nameTr}${pick.reversed ? ' (ters)' : ''}`,
+        themes: reader().themesOf(card, pick.reversed),
+        rev: pick.reversed,
+        ask: (() => { const n = notes().noteOf(card.id); return n ? (pick.reversed ? n.askReversed : n.ask) : ''; })(),
+      };
     });
-    if (spread.id === 'daily') return dailyEssay(seats[0]);
+    return map;
+  }
+
+  const turn = (seat, text) => (seat.rev ? ` ${text}` : '');
+
+  const STORIES = {
+    three: (s) => [
+      `Hikâye geçmişte ${s.past.name} kartıyla başlıyor. Geride kalan dönemde ${s.past.themes} belirleyiciydi ve bugüne uzanan bir iz bıraktı.${turn(s.past, 'Kart ters geldiği için o dönem tam yaşanmamış, içinde bir düğüm bırakmış olabilir.')}`,
+      `Şimdi masanın ortasında ${s.present.name} duruyor. Bugün işin özünde ${s.present.themes} var.${turn(s.present, 'Ters geldiği için bu enerji şu an tıkalı ya da içe dönük akıyor.')} Geçmişten gelen iz ile bugünkü hal arasındaki bağ, yaşadığın şeyin neden şimdi önüne çıktığını anlatıyor.`,
+      `Gidişatın yerinde ${s.future.name} var. Yol böyle sürerse ${s.future.themes} öne çıkabilir.${turn(s.future, 'Ters geldiği için bu tema gecikmeli ya da zorlanarak gelebilir.')} Bu bir kehanet değil; bugünkü adımların değişirse gidişat da değişir. Değişimin kapısı ortadaki kartta, yani bugünkü seçimlerinde duruyor.`,
+    ],
+    relationship: (s, r) => [
+      `Önce ikinizin masadaki yerine bak. Sen bu ilişkiye ${s.self.name} ile geliyorsun: ${s.self.themes}. ${r.personName ? r.personName : 'Karşı taraf'} tarafında ${s.other.name} duruyor; ilişkiye ${s.other.themes} taşıyor. Kart onun aklından geçenleri söylemez, yalnızca getirdiği enerjiyi gösterir.`,
+      `Aranızdaki bağ ${s.bond.name} kartıyla okunuyor. Bu bağın şu anki dokusu ${s.bond.themes}.${turn(s.bond, 'Kart ters geldiği için bu duygu şu an açıkça yaşanmıyor, içte tutuluyor olabilir.')} Önünüzdeki eşik ise ${s.obstacle.name}: ${s.obstacle.themes}. Bu eşik ilişkiyi bitiren bir duvar değil; ikinizin de bakması gereken yer.`,
+      `Potansiyelin yerinde ${s.potential.name} var. İlişki en iyi ihtimalle ${s.potential.themes} yönünde açılabilir.${turn(s.potential, 'Ters geldiği için bu olasılık kendiliğinden gelmiyor; emek ve sabır istiyor.')} Bu, kendiliğinden yazılmış bir son değil; bağa nasıl emek verdiğinizle şekillenen bir ihtimal.`,
+    ],
+    career: (s) => [
+      `İşte ya da parada şu an ${s.current.name} ile duruyorsun: ${s.current.themes}.${turn(s.current, 'Kart ters geldiği için bu durum sende bir sıkışma hissi bırakıyor olabilir.')} Önündeki en büyük engel ${s.obstacle.name} kartında görünüyor: ${s.obstacle.themes}.`,
+      `Ama masada dayanabileceğin bir güç de var. ${s.strength.name} sana ${s.strength.themes} veriyor.${turn(s.strength, 'Ters geldiği için bu güç şu an uykuda; onu yeniden hatırlaman gerekebilir.')} Tavsiyenin yerindeki ${s.advice.name} ise atılacak adımı ${s.advice.themes} tarafında gösteriyor.`,
+      `Bu yolda devam edersen ${s.outcome.name} kartının anlattığı hal öne çıkabilir: ${s.outcome.themes}.${turn(s.outcome, 'Ters geldiği için bu sonuç gecikmeli ya da beklediğinden farklı bir biçimde gelebilir.')} Bu kesin bir son değil; engeli tanıyıp güçlü yanına yaslandıkça yön de değişebilir.`,
+    ],
+    decision: (s, r) => [
+      `Kararın özünde ${s.situation.name} duruyor: ${s.situation.themes}. Seçimi zorlaştıran ya da anlamlı kılan şey bu.`,
+      `${r.optionA || 'Birinci yol'} tarafında süreç ${s.a_path.name} ile yürüyor: ${s.a_path.themes}. Bu yol ${s.a_outcome.name} kartına, yani ${s.a_outcome.themes} yönüne varma eğiliminde.${turn(s.a_outcome, 'Varış kartı ters geldiği için bu yolun bedeli sonda hissedilebilir.')}`,
+      `${r.optionB || 'İkinci yol'} tarafında süreç ${s.b_path.name} ile yürüyor: ${s.b_path.themes}. Bu yol ${s.b_outcome.name} kartına, yani ${s.b_outcome.themes} yönüne varma eğiliminde.${turn(s.b_outcome, 'Varış kartı ters geldiği için bu yolun bedeli sonda hissedilebilir.')}`,
+      `Kartlar hangisini seçmen gerektiğini söylemez. İki yolun getirisini ve bedelini yan yana koyar; sana benzeyen tarafı sen ayırırsın. Karar verirken şuna bak: hangi yolun bedelini taşımaya hazırsın, hangisinin getirisi sana gerçekten benziyor? Bazen doğru seçim daha kolay olan değil, sana daha çok benzeyen yoldur.`,
+    ],
+    celtic: (s) => [
+      `Haçın kalbinde ${s.present.name} var: sorunun özünde ${s.present.themes} yatıyor. Onu kesen ${s.challenge.name} ise duruma karışan gücü gösteriyor: ${s.challenge.themes}.${turn(s.challenge, 'Kesen kart ters geldiği için bu güç açıkça değil, alttan alta çalışıyor.')} Bu iki kart birlikte, seni neyin meşgul ettiğini ve neyin önüne çıktığını yan yana koyuyor.`,
+      `Kökte ${s.root.name} duruyor; görünenin altında ${s.root.themes} çalışıyor. Yakın geçmişten ${s.past.name} geliyor: ${s.past.themes}. Bu etki çekiliyor ama bugünkü tabloyu o hazırladı. Tacın yerindeki ${s.crown.name} ise bilinçli olarak uzandığın yeri gösteriyor: ${s.crown.themes}. Yakında kapıya ${s.future.name} geliyor; ${s.future.themes} belirmeye başlayabilir.`,
+      `Sağdaki sütun senden başlıyor. Bu duruma ${s.self.name} ile yaklaşıyorsun: ${s.self.themes}. Çevrenden gelen etki ${s.environment.name}: ${s.environment.themes}. İç sesin ise ${s.hopes_fears.name} ile konuşuyor; umutların ve korkuların ${s.hopes_fears.themes} etrafında düğümleniyor.`,
+      `Gidişatın vardığı yerde ${s.outcome.name} var: yol böyle sürerse ${s.outcome.themes} öne çıkabilir.${turn(s.outcome, 'Sonuç kartı ters geldiği için bu varış gecikmeli ya da zorlanarak gelebilir.')} Bu bir hüküm değil. Kalpteki düğümü ve kökteki sebebi gördükçe, sütunun sonundaki kart da değişebilir.`,
+    ],
+  };
+
+  const AREA = { 'Ateş': 'tutku, irade ve harekete geçme', 'Su': 'duygular ve ilişkiler', 'Hava': 'düşünceler, iletişim ve kararlar', 'Toprak': 'para, iş, beden ve somut sonuçlar' };
+
+  // Masanın genel havası: Büyük Arkana ağırlığı, ters kartlar ve baskın element.
+  function tone(reading, cardsApi) {
+    const sig = reader().signals(reading.cards, cardsApi);
+    const lines = [];
+    if (sig.majorRatio >= 0.5) lines.push('Büyük Arkana kartları ağırlıkta; konu gündelik bir ayrıntıdan çok hayatındaki büyük bir döneme bağlanıyor.');
+    else if (sig.majorRatio === 0) lines.push('Masada hiç Büyük Arkana yok; konu gündelik ve büyük ölçüde senin elinde.');
+    else lines.push('Büyük ve Küçük Arkana birlikte konuşuyor; geniş bir dönemin içinde gündelik adımların da payı var.');
+    if (sig.reversedRatio >= 0.5) lines.push('Kartların çoğu ters geldi; enerji şu an içe dönük, bazı şeyler gecikiyor ya da henüz söze dökülmüyor.');
+    else if (sig.reversedRatio === 0) lines.push('Hiç ters kart yok; enerji açık ve görünür akıyor.');
+    else lines.push('Birkaç kart ters geldi; o yerlerde enerji içe dönük ya da gecikmeli.');
+    if (sig.dominant) lines.push(`Baskın element ${sig.dominant}: asıl konu ${AREA[sig.dominant]} alanında dönüyor.`);
+    return lines.join(' ');
+  }
+
+  const HEART = { three: 'present', relationship: 'bond', career: 'advice', decision: 'situation', celtic: 'present' };
+  const LAST = { three: 'future', relationship: 'potential', career: 'outcome', decision: 'situation', celtic: 'outcome' };
+
+  function longClosing(reading, spread, cardsApi) {
+    if (spread.id === 'daily') {
+      const pick = reading.cards[0];
+      const card = cardsApi.getCard(pick.cardId);
+      return dailyEssay({ position: spread.positions[0], pick, card, meaning: String(pick.reversed ? card.reversed : card.upright) });
+    }
+    const seats = seatsOf(reading, spread, cardsApi);
     const question = String(reading.question || '').replace(/\s+/g, ' ').trim();
     const opening = question
-      ? `“${question}” diye sordun. Kartlar bunu kesin bir hükümle değil, bu dönemde yaşayabileceğin hallerle cevaplıyor.`
-      : `Bu açılım, bu dönemde nelerin öne çıkabileceğini anlatıyor.`;
-    const paragraphs = seats.map((item) => seatReading(item, 'Bu dönemde'));
-    let ending;
-    if (spread.id === 'decision') {
-      ending = `${reading.optionA || 'Birinci yol'} ile ${reading.optionB || 'ikinci yol'} aynı masada duruyor. Kartlar hangisini seçmen gerektiğini söylemez. Bir yol daha hafif, diğeri daha bedelli gelebilir. Sana benzeyen tarafı sen ayırırsın.`;
-    } else if (spread.id === 'relationship') {
-      const who = reading.personName ? `${reading.personName} bu ilişkiye bir enerji getiriyor. ` : '';
-      ending = `${who}Bu okuma karşı tarafın aklından geçenleri söylemez. Onun getirdiği hal ile senin durduğun yeri yan yana koyar. Bugün bunu bir kavga ya da bir yakınlaşma olarak görebilirsin; ikisi de mümkün.`;
-    } else {
-      ending = `Kartlar “böyle olur” demiyor. Bu dönemde bu haller öne çıkabilir. Hangisi günün içinde belirirse, okuma tam orada duruyordur.`;
-    }
-    return [opening, ...paragraphs, ending].join('\n\n');
+      ? `“${question}” diye sordun. Kartlar buna kesin bir hükümle değil, bu dönemin hikâyesini anlatarak cevap veriyor.`
+      : 'Bu açılım, bu dönemde hayatında nelerin öne çıkabileceğini bir hikâye gibi anlatıyor.';
+    const story = (STORIES[spread.id] || STORIES.three)(seats, reading);
+    const asks = [...new Set([seats[HEART[spread.id]], seats[LAST[spread.id]]].filter(Boolean).map((seat) => seat.ask).filter(Boolean))];
+    const ending = asks.length
+      ? `Okumayı kapatırken kendine şunu sorabilirsin: ${asks.join(' Bir de: ')} Cevabı hemen bulmak zorunda değilsin; bu soruları birkaç gün yanında taşıman yeter.`
+      : 'Okumayı kapatırken aklında kalan tek bir cümleyi not et. Kartlar bir son yazmaz; neye bakman gerektiğini gösterir.';
+    return [opening, tone(reading, cardsApi), ...story, ending].join('\n\n');
   }
 
   async function closing(reading, spread, cardsApi, options) {

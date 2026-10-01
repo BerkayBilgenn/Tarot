@@ -127,7 +127,7 @@
       'Ani ayrılık ya da ilişkideki gerçeğin patlaması. İşte ani kayıp, kriz, işten çıkarılma.',
       'Felaketten kıl payı kurtulmak ya da kaçınılmaz değişimi ertelemek. İçsel, yavaş çöküş.'],
     ['the-star', 'The Star', 'Yıldız', null, 'Kova', ['umut', 'iyileşme', 'ilham', 'yenilenme'],
-      'Tower\'dan sonra gelen sakinlik. İnancın geri dönmesi, şifa, huzur.',
+      'Yıkımdan sonra gelen sakinlik. İnancın geri dönmesi, şifa, huzur.',
       'İyileştiren, umut veren ilişki. İşte vizyon, yaratıcı ilham, uzun vadeli hedefler.',
       'Umutsuzluk, inanç kaybı, motivasyonsuzluk. Kendinden kopmak.'],
     ['the-moon', 'The Moon', 'Ay', null, 'Balık', ['yanılsama', 'korku', 'belirsizlik', 'bilinçaltı'],

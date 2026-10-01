@@ -3,191 +3,237 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#fcf6e5">
+  <meta name="theme-color" content="#070d19">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Cpath fill=%27%23d8b782%27 d=%27M20.4 14.6A8.5 8.5 0 0 1 9.4 3.6a.6.6 0 0 0-.8-.7A9.5 9.5 0 1 0 21.1 15.4a.6.6 0 0 0-.7-.8Z%27/%3E%3C/svg%3E">
   <meta name="description" content="Bir nefes al. Niyetini seç, kartlarını kendi elinle çek. Kendine dön.">
   <title>kendine dön · Tarot okuması</title>
-  <link rel="stylesheet" href="styles.css?v=37">
-  <script>document.documentElement.style.setProperty('--page-scale', innerWidth <= 900 ? 1 : Math.min(innerWidth / 1586, innerHeight / 992));</script>
-  <script src="cards.js" defer></script>
+  <link rel="preload" href="assets/fonts/display-soft.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="night.tokens.css?v=2">
+  <link rel="stylesheet" href="night.css?v=5">
+  <link rel="stylesheet" href="night.motion.css?v=4">
+  <script src="cards.js?v=2" defer></script>
   <script src="spreads.js?v=2" defer></script>
+  <script src="ui-helpers.js?v=3" defer></script>
+  <script src="motion.js?v=3" defer></script>
+  <script src="shuffle.js?v=2" defer></script>
+  <script src="card-notes.js?v=1" defer></script>
   <script src="yorum-motoru.js?v=2" defer></script>
-  <script src="reading.js?v=4" defer></script>
-  <script src="oracle.js?v=10" defer></script>
-  <script src="app.js?v=28" defer></script>
+  <script src="reading.js?v=6" defer></script>
+  <script src="oracle.js?v=12" defer></script>
+  <script src="app.js?v=33" defer></script>
 </head>
-<!-- live: başlıklar yumuşak Fraunces ile çizilir. reference: mockup kırpmasını geri açar. -->
-<body data-lettering="live">
-  <div class="stage-viewport">
-    <div class="stage-fit">
-      <div class="stage" id="app" data-step="intent" data-view="home">
-      <div class="corner-art" aria-hidden="true"></div>
-      <header class="header">
-        <a class="brand" href="#acilim" aria-label="kendine dön, ana sayfa" data-nav="home">
-          <span class="brand-name">kendine dön</span>
-          <span class="brand-tagline">İÇİNDE KALANLARA BİR YER</span>
-        </a>
-        <nav class="navigation" aria-label="Ana menü">
-          <a class="nav-active" href="#acilim" aria-current="page" data-nav="home">Bir açılım yap</a>
-          <button id="open-guide" type="button" data-nav="guide">Kartları tanı</button>
-          <button id="open-history" type="button">Okumalarım</button>
-          <button id="open-settings" type="button">Ayarlar</button>
+<body>
+  <div class="scene" id="app" data-step="intent" data-view="home">
+    <header class="site-header">
+      <a class="brand" href="#acilim" aria-label="kendine dön, ana sayfa" data-nav="home">kendine dön</a>
+      <nav class="site-nav" aria-label="Ana menü">
+        <a class="nav-active" href="#acilim" aria-current="page" data-nav="home" aria-label="Bir açılım yap"><span class="nav-long" aria-hidden="true">Bir açılım yap</span><span class="nav-short" aria-hidden="true">Açılım</span></a>
+        <button id="open-guide" type="button" data-nav="guide" aria-label="Kartları tanı"><span class="nav-long" aria-hidden="true">Kartları tanı</span><span class="nav-short" aria-hidden="true">Kartlar</span></button>
+        <button id="open-history" type="button" data-nav="history">Okumalarım</button>
+        <button id="open-settings" type="button" data-nav="settings">Ayarlar</button>
+      </nav>
+      <span class="moon-mark" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M20.4 14.6A8.5 8.5 0 0 1 9.4 3.6a.6.6 0 0 0-.8-.7A9.5 9.5 0 1 0 21.1 15.4a.6.6 0 0 0-.7-.8Z"/></svg>
+      </span>
+    </header>
+
+    <main>
+      <section class="flow reading-panel" id="acilim" aria-labelledby="spread-title">
+        <ol class="flow-steps" id="flow-steps" aria-label="Okuma adımları" hidden>
+          <li data-flow="1"><span class="flow-mark" aria-hidden="true"></span><span class="flow-num">01</span> Niyetin</li>
+          <li data-flow="2"><span class="flow-mark" aria-hidden="true"></span><span class="flow-num">02</span> Kartların</li>
+          <li data-flow="3"><span class="flow-mark" aria-hidden="true"></span><span class="flow-num">03</span> Yorumun</li>
+        </ol>
+        <div class="flow-head">
+          <span class="flow-emblem" aria-hidden="true">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor"><path d="M20.4 14.6A8.5 8.5 0 0 1 9.4 3.6a.6.6 0 0 0-.8-.7A9.5 9.5 0 1 0 21.1 15.4a.6.6 0 0 0-.7-.8Z"/></svg>
+          </span>
+          <h1 id="spread-title" class="spread-title" tabindex="-1">Biraz da kendini dinle.</h1>
+          <p id="progress" class="progress-line" hidden></p>
+          <p id="instruction" class="flow-instruction"></p>
+          <div id="spread-meta" hidden></div>
+          <div id="depth-slot"></div>
+        </div>
+
+        <div class="step-body" id="step-body"></div>
+
+        <div class="action-row">
+          <button class="btn btn-quiet btn-back" type="button" id="back" hidden>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="btn-label">Geri</span>
+          </button>
+          <button class="btn btn-quiet" type="button" id="secondary" hidden></button>
+          <p class="selection-status" id="status" role="status" aria-live="polite" aria-atomic="true"></p>
+          <button class="btn btn-ghost reshuffle-button" type="button" id="reshuffle" hidden>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M20 4v5h-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Yeniden seç
+          </button>
+          <button class="btn btn-main" type="button" id="primary" hidden></button>
+        </div>
+      </section>
+
+      <section class="guide-page" id="guide-page" hidden aria-labelledby="guide-title">
+        <div class="guide-head">
+          <div class="guide-titles">
+            <h1 class="guide-title" id="guide-title" tabindex="-1">Her kart, başka bir pencere.</h1>
+            <p class="guide-lead" id="guide-note"></p>
+          </div>
+          <label class="search-field guide-search">
+            <span class="sr-only">Kart ara</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <input id="guide-query" type="search" placeholder="Kart ara" autocomplete="off" enterkeyhint="search">
+          </label>
+        </div>
+        <div class="pill-row guide-filters" role="radiogroup" aria-label="Deste">
+          <button type="button" role="radio" data-suit="all" aria-checked="true" tabindex="0">Tümü</button>
+          <button type="button" role="radio" data-suit="major" aria-checked="false" tabindex="-1">Büyük Arkana</button>
+          <button type="button" role="radio" data-suit="wands" aria-checked="false" tabindex="-1">Asalar</button>
+          <button type="button" role="radio" data-suit="cups" aria-checked="false" tabindex="-1">Kupalar</button>
+          <button type="button" role="radio" data-suit="swords" aria-checked="false" tabindex="-1">Kılıçlar</button>
+          <button type="button" role="radio" data-suit="pentacles" aria-checked="false" tabindex="-1">Tılsımlar</button>
+        </div>
+        <div class="guide-stage" id="guide-stage">
+          <div class="guide-deck" id="guide-deck" role="group" aria-roledescription="deste" aria-label="Kartlar. Ok tuşlarıyla gez, Enter ile kartın penceresini aç."></div>
+          <p class="guide-empty" id="guide-empty" hidden>Bu aramaya uyan kart yok.</p>
+          <div class="guide-caption" id="guide-caption">
+            <p class="eyebrow" id="guide-card-meta"></p>
+            <h2 class="guide-card-name" id="guide-card-name"></h2>
+            <p class="guide-card-keys" id="guide-card-keys"></p>
+          </div>
+          <div class="guide-controls">
+            <button type="button" class="story-arrow" id="guide-prev" aria-label="Önceki kart">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m15 5-7 7 7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <span class="guide-count" id="guide-count" aria-hidden="true"></span>
+            <button type="button" class="story-arrow" id="guide-next" aria-label="Sonraki kart">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <p class="sr-only" id="guide-live" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="history-page" id="history-page" hidden aria-labelledby="history-title">
+        <div class="history-head">
+          <div>
+            <p class="eyebrow">KİŞİSEL GÜNLÜĞÜN</p>
+            <h1 class="history-title" id="history-title" tabindex="-1">Okumalarım</h1>
+            <p class="history-lead">Döndükçe başka bir şey fark edebilirsin.</p>
+          </div>
+          <button class="btn btn-outline" type="button" id="history-new">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <span class="btn-label">Yeni açılım</span>
+          </button>
+        </div>
+        <label class="search-field history-search">
+          <span class="sr-only">Okumalarında ara</span>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <input id="history-query" type="search" placeholder="Okumalarında ara" autocomplete="off" enterkeyhint="search">
+        </label>
+        <div class="history-bar">
+          <div class="pill-row history-filters" id="history-filters" role="radiogroup" aria-label="Açılım"></div>
+          <p class="history-count" id="history-count" role="status" aria-live="polite"></p>
+        </div>
+        <ul class="history-list" id="history-list"></ul>
+        <nav class="pager" id="history-pager" aria-label="Okuma sayfaları" hidden>
+          <button type="button" class="story-arrow" id="history-prev" aria-label="Önceki sayfa">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m15 5-7 7 7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <span class="pager-label" id="history-page-label"></span>
+          <button type="button" class="story-arrow" id="history-next" aria-label="Sonraki sayfa">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
         </nav>
-      </header>
-
-      <main>
-        <section class="intro" aria-labelledby="hero-title">
-          <p class="eyebrow">KENDİNE BİR AN AYIR</p>
-          <h1 class="hero-title" id="hero-title"><span>Biraz da</span><span>kendini</span><span>dinle.</span></h1>
-          <p class="intro-description">Bir nefes al. Bugün kendine biraz daha yaklaş.</p>
-        </section>
-
-        <div class="portal-art" role="img" aria-label="Ay ışığında mavi merdivenli Akdeniz kemeri, çiçekler ve limonlar. Acele etme."></div>
-
-        <section class="reading-panel" id="acilim" aria-labelledby="spread-title">
-          <!-- Sadece çizimler bu SVG'de kalır. Kaynaktaki metinler ve kontroller maskelenir. -->
-          <div class="panel-veil" aria-hidden="true"></div>
-          <svg class="panel-art" viewBox="0 0 1084 820" preserveAspectRatio="none" aria-hidden="true">
-            <defs>
-              <mask id="art-only-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="1084" height="820">
-                <rect width="1084" height="820" fill="white"/>
-                <g fill="black">
-                  <rect x="43" y="34" width="355" height="49"/>
-                  <rect x="45" y="90" width="315" height="25"/>
-                  <rect x="931" y="44" width="103" height="52"/>
-                  <rect x="274" y="126" width="27" height="25"/>
-                  <rect x="194" y="151" width="185" height="274"/>
-                  <rect x="211" y="425" width="166" height="49"/>
-                  <rect x="516" y="126" width="27" height="25"/>
-                  <rect x="433" y="155" width="187" height="267"/>
-                  <rect x="448" y="425" width="179" height="49"/>
-                  <rect x="758" y="126" width="31" height="25"/>
-                  <rect x="679" y="155" width="181" height="267"/>
-                  <rect x="689" y="425" width="181" height="49"/>
-                  <rect x="84" y="477" width="886" height="263"/>
-                  <rect x="48" y="751" width="184" height="50"/>
-                  <rect x="443" y="762" width="196" height="40"/>
-                  <rect x="819" y="749" width="212" height="57"/>
-                </g>
-              </mask>
-            </defs>
-            <image href="assets/mockup-reference.png" x="-464" y="-115" width="1586" height="992" mask="url(#art-only-mask)"/>
-          </svg>
-          <div class="panel-heading">
-            <ol class="flow-steps" aria-label="Okuma adımları">
-              <li class="is-done"><span class="flow-mark" aria-hidden="true">✓</span><span class="flow-num">01</span> Niyetin</li>
-              <li class="is-current" aria-current="step"><span class="flow-mark" aria-hidden="true"></span><span class="flow-num">02</span> Kartların</li>
-              <li><span class="flow-mark" aria-hidden="true"></span><span class="flow-num">03</span> Yorumun</li>
-            </ol>
-            <h2 id="spread-title" class="spread-title" tabindex="-1">Bugün ne öğrenmek istiyorsun?</h2>
-            <div id="spread-meta" hidden></div>
-            <p id="instruction"></p>
-            <div id="depth-slot"></div>
-          </div>
-          <span class="progress-badge" id="progress" hidden></span>
-
-          <div class="step-body" id="step-body"></div>
-
-          <div class="action-row">
-            <div class="action-start">
-              <button class="shuffle-button" type="button" id="back" hidden>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 5 8 12l7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Geri
-              </button>
-              <button class="text-button" type="button" id="secondary" hidden></button>
-            </div>
-            <p class="selection-status" id="status" role="status" aria-live="polite" aria-atomic="true"></p>
-            <div class="action-end">
-              <button class="text-button reshuffle-button" type="button" id="reshuffle" hidden>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M20 4v5h-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Yeniden seç
-              </button>
-              <button class="interpret-button" type="button" id="primary" hidden></button>
-            </div>
-          </div>
-        </section>
-        <p class="reassurance">Doğru ya da yanlış seçim yok. Sadece sana yakın gelen var.</p>
-        <section class="guide-page" id="guide-page" hidden aria-labelledby="guide-title">
-          <div class="guide-intro">
-            <p class="eyebrow">KARTLARIN DİLİ</p>
-            <h2 class="guide-title" id="guide-title" tabindex="-1"><span>Her kart,</span><span>başka bir</span><span>pencere.</span></h2>
-            <p class="guide-lead">Bir sembol, içinde zaten var olan bir düşünceye yer açabilir.</p>
-          </div>
-          <div class="guide-panel">
-            <div class="guide-toolbar">
-              <div class="guide-filters" role="radiogroup" aria-label="Deste">
-                <button type="button" role="radio" data-suit="all" aria-checked="true" tabindex="0">Tümü</button>
-                <button type="button" role="radio" data-suit="major" aria-checked="false" tabindex="-1">Büyük Arkana</button>
-                <button type="button" role="radio" data-suit="wands" aria-checked="false" tabindex="-1">Asalar</button>
-                <button type="button" role="radio" data-suit="cups" aria-checked="false" tabindex="-1">Kupalar</button>
-                <button type="button" role="radio" data-suit="swords" aria-checked="false" tabindex="-1">Kılıçlar</button>
-                <button type="button" role="radio" data-suit="pentacles" aria-checked="false" tabindex="-1">Tılsımlar</button>
-              </div>
-              <label class="guide-search">
-                <span class="sr-only">Kart ara</span>
-                <input id="guide-query" type="search" placeholder="Kart ara" autocomplete="off" enterkeyhint="search">
-              </label>
-            </div>
-            <p class="guide-note" id="guide-note"></p>
-            <div class="guide-scroll" id="guide-scroll"></div>
-          </div>
-        </section>
-        <p class="sr-only" id="announcer" aria-live="assertive" aria-atomic="true"></p>
-      </main>
-      </div>
-    </div>
+      </section>
+      <p class="sr-only" id="announcer" aria-live="assertive" aria-atomic="true"></p>
+    </main>
   </div>
 
-  <dialog class="tarot-dialog history-dialog" id="history-dialog" aria-labelledby="history-title">
-    <form method="dialog"><button class="dialog-close" aria-label="Kapat">×</button></form>
-    <div class="history-head">
-      <p class="eyebrow">KAYITLI OKUMALAR</p>
-      <h2 id="history-title">Okumalarım</h2>
-      <p class="history-count" id="history-count"></p>
-    </div>
-    <div class="history-filters" id="history-filters" role="radiogroup" aria-label="Açılım"></div>
-    <ul class="history-list" id="history-list"></ul>
-  </dialog>
-
-  <dialog class="tarot-dialog" id="settings-dialog" aria-labelledby="settings-title">
-    <form method="dialog"><button class="dialog-close" aria-label="Kapat">×</button></form>
-    <p class="eyebrow">TERCİHLER</p>
+  <dialog class="night-dialog settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+    <form method="dialog"><button class="dialog-close" aria-label="Ayarları kapat">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button></form>
     <h2 id="settings-title">Ayarlar</h2>
+    <p class="dialog-lead">Deneyimini kendine göre ayarla.</p>
     <form class="settings-form" id="settings-form">
-      <label class="toggle-row"><span><strong>Ters kartlar</strong><small>Değişiklik bir sonraki okumada geçerli olur.</small></span><input type="checkbox" role="switch" name="reversals"></label>
-      <fieldset class="toggle-row">
-        <legend><strong>Animasyonlar</strong></legend>
+      <h3>OKUMA</h3>
+      <label class="setting-row">
+        <span class="setting-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="6" y="3" width="12" height="18" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="m12 9.5.9 1.9 2.1.3-1.5 1.5.4 2.1-1.9-1-1.9 1 .4-2.1L9 11.7l2.1-.3Z" fill="currentColor"/></svg></span>
+        <span class="setting-copy"><strong>Ters kartlar</strong><small>Bir sonraki okumada geçerli olur.</small></span>
+        <input type="checkbox" role="switch" name="reversals">
+      </label>
+      <h3>SES VE HAREKET</h3>
+      <fieldset class="setting-row">
+        <legend class="sr-only">Animasyonlar</legend>
+        <span class="setting-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M10 4c.6 4.2 1.8 5.4 6 6-4.200.6-5.400 1.800-6 6-.6-4.200-1.800-5.400-6-6 4.200-.6 5.400-1.800 6-6ZM18 14c.3 2 .9 2.700 3 3-2.100.3-2.700 1-3 3-.3-2-.9-2.700-3-3 2.100-.3 2.700-1 3-3Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span>
+        <span class="setting-copy"><strong>Animasyonlar</strong></span>
         <span class="segmented" role="radiogroup" aria-label="Animasyonlar">
           <label><input type="radio" name="motion" value="full"><span>Tam</span></label>
           <label><input type="radio" name="motion" value="reduced"><span>Azaltılmış</span></label>
         </span>
       </fieldset>
-      <label class="toggle-row"><span><strong>Ses</strong><small>Karıştırma, kart kayma ve açılış sesleri.</small></span><input type="checkbox" role="switch" name="sound"></label>
-      <label class="toggle-row"><span><strong>Haptic</strong><small>Titreşim yalnızca destekleyen cihazlarda çalışır.</small></span><input type="checkbox" role="switch" name="haptic"></label>
-      <label class="toggle-row"><span><strong>Günlük hatırlatma saati</strong><small>Günün kartı için.</small></span><input type="time" name="reminderTime"></label>
+      <label class="setting-row">
+        <span class="setting-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 9.500v5h3.500L12 18.500v-13L7.500 9.500Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M15.500 9a4.200 4.200 0 0 1 0 6M18 6.500a7.500 7.500 0 0 1 0 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+        <span class="setting-copy"><strong>Ses</strong><small>Kart ve karıştırma sesleri</small></span>
+        <input type="checkbox" role="switch" name="sound">
+      </label>
+      <label class="setting-row">
+        <span class="setting-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="8" y="4" width="8" height="16" rx="1.800" stroke="currentColor" stroke-width="1.400"/><path d="M4.500 9v6M19.500 9v6" stroke="currentColor" stroke-width="1.400" stroke-linecap="round"/></svg></span>
+        <span class="setting-copy"><strong>Dokunsal geri bildirim</strong><small>Destekleyen cihazlarda çalışır.</small></span>
+        <input type="checkbox" role="switch" name="haptic">
+      </label>
+      <h3>HATIRLATMALAR</h3>
+      <label class="setting-row">
+        <span class="setting-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 16.500V11a6 6 0 0 1 12 0v5.500l1.500 1.500h-15ZM10 20.500h4" stroke="currentColor" stroke-width="1.400" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="setting-copy"><strong>Günlük hatırlatma</strong></span>
+        <input class="time-field" type="time" name="reminderTime">
+      </label>
+      <p class="settings-note">Tercihlerin otomatik kaydedilir.</p>
     </form>
   </dialog>
 
-  <dialog class="tarot-dialog confirm-dialog" id="leave-dialog" aria-labelledby="leave-title" aria-describedby="leave-text">
-    <h2 id="leave-title">Okumayı bırakmak istediğine emin misin?</h2>
+  <dialog class="night-dialog confirm-dialog" id="leave-dialog" aria-labelledby="leave-title" aria-describedby="leave-text">
+    <span class="dialog-emblem" aria-hidden="true">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><path d="M20.4 14.6A8.5 8.5 0 0 1 9.4 3.6a.6.6 0 0 0-.8-.7A9.5 9.5 0 1 0 21.1 15.4a.6.6 0 0 0-.7-.8Z"/></svg>
+    </span>
+    <h2 id="leave-title">Okumaya ara verelim mi?</h2>
     <p class="dialog-lead" id="leave-text"></p>
     <form method="dialog" class="dialog-actions">
-      <button class="ghost-button" value="stay" autofocus>Okumaya dön</button>
-      <button class="interpret-button" value="leave">Okumayı bırak</button>
+      <button class="btn btn-main" value="stay" autofocus>Okumaya dön</button>
+      <button class="btn btn-outline" value="leave">Şimdilik ayrıl</button>
     </form>
   </dialog>
 
-  <dialog class="tarot-dialog card-dialog" id="card-dialog" aria-labelledby="card-dialog-title">
-    <form method="dialog"><button class="dialog-close" aria-label="Kapat">×</button></form>
+  <dialog class="night-dialog card-dialog" id="card-dialog" aria-labelledby="card-dialog-title">
+    <form method="dialog"><button class="dialog-close" aria-label="Kart detayını kapat">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button></form>
     <div class="card-detail">
       <div class="card-detail-art"><img id="card-dialog-img" alt=""></div>
       <div class="card-detail-copy">
         <p class="eyebrow" id="card-dialog-meta"></p>
         <h2 id="card-dialog-title"></h2>
         <p class="card-detail-tr" id="card-dialog-tr"></p>
-        <h3>Düz anlam</h3>
-        <p id="card-dialog-upright"></p>
-        <h3>Ters anlam</h3>
-        <p id="card-dialog-reversed"></p>
+        <ul class="card-detail-keys" id="card-dialog-keys" aria-label="Anahtar kelimeler"></ul>
+        <div class="segmented meaning-toggle" id="meaning-toggle" role="radiogroup" aria-label="Kartın anlamı">
+          <button type="button" role="radio" data-meaning="upright" aria-checked="true" tabindex="0">Düz</button>
+          <button type="button" role="radio" data-meaning="reversed" aria-checked="false" tabindex="-1">Ters</button>
+        </div>
+        <section class="card-meaning" id="card-meaning" aria-live="polite">
+          <h3 id="card-meaning-title">Düz anlam</h3>
+          <p id="card-meaning-text"></p>
+        </section>
+        <div class="card-detail-nav" id="card-dialog-nav" hidden>
+          <button type="button" class="link-button" id="card-prev">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Önceki kart
+          </button>
+          <button type="button" class="link-button" id="card-next">
+            Sonraki kart
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
       </div>
     </div>
   </dialog>

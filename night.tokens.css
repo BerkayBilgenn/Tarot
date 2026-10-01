@@ -1,0 +1,25 @@
+/* Gece Ritüeli tasarım değişkenleri. Değerler onaylı mockuplara bakılarak kalibre edilir. */
+@font-face{font-family:NightDisplay;src:url('assets/fonts/display-soft.woff2') format('woff2');font-style:normal;font-weight:100 900;font-display:swap}
+@font-face{font-family:NightDisplay;src:url('assets/fonts/display-soft-italic.woff2') format('woff2');font-style:italic;font-weight:100 900;font-display:swap}
+@font-face{font-family:NightUI;src:url('assets/fonts/ui-regular.woff') format('woff');font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:NightUI;src:url('assets/fonts/ui-bold.woff') format('woff');font-style:normal;font-weight:600 800;font-display:swap}
+
+:root{
+  color-scheme:dark;
+  --night-bg:#070d19;--night-surface:#101521;--night-raised:#181d29;
+  --night-text:#f4ebdd;--night-muted:#b7b4be;--night-dim:#8f8c9a;
+  --night-gold:#d8b782;--night-ivory:#f1e5d1;
+  --night-line:rgba(235,222,202,.16);--night-line-strong:rgba(235,222,202,.3);
+  --night-focus:#f0ce95;--night-danger:#f0a19a;
+  --night-display:NightDisplay,Georgia,'Times New Roman',serif;
+  --night-ui:NightUI,'Helvetica Neue',Arial,sans-serif;
+  --night-scene:url('assets/night/night-scene.png');
+  --night-back:url('assets/night/card-back-560.png');
+  --night-covers:url('assets/night/hero-card-strip.png');
+  --gutter:clamp(20px,4.5vw,72px);
+  --night-radius-control:12px;--night-radius-dialog:20px;--night-radius-card:8px;
+  --night-card-shadow:0 2px 0 #8c7757,0 5px 0 #544535,0 12px 18px #0008,0 24px 44px #0007;
+  --night-card-shadow-flat:0 1px 0 #8c7757,0 3px 0 #544535,0 8px 14px #0008,0 14px 26px #0006;
+  --night-dialog-shadow:0 36px 100px #0009;
+  --night-ease:cubic-bezier(.2,.75,.25,1);--night-fast:200ms;--night-flip:500ms;
+}

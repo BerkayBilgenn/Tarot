@@ -240,8 +240,11 @@
     function complete(readingId) {
       const list = load();
       const reading = find(list, readingId);
-      if (!reading.interpretation) {
-        reading.interpretation = interpret(reading, spreads.getSpread(reading.spreadId), cards);
+      const old = reading.interpretation;
+      if (!old || old.textVersion !== TEXT_VERSION) {
+        const fresh = interpret(reading, spreads.getSpread(reading.spreadId), cards);
+        if (old && old.closingSource === 'llm' && old.closing) Object.assign(fresh, { closing: old.closing, closingSource: 'llm', closingVoice: old.closingVoice });
+        reading.interpretation = fresh;
         save(list);
       }
       return wait(reading.interpretation);
@@ -306,7 +309,7 @@
       const closing = String(text || '').trim().slice(0, 8000);
       reading.interpretation.closing = closing;
       reading.interpretation.closingSource = source === 'template' ? 'template' : 'llm';
-      reading.interpretation.closingVoice = 'okuma-3';
+      reading.interpretation.closingVoice = 'okuma-4';
       save(list);
       return wait(reading.interpretation);
     }
@@ -369,7 +372,6 @@
 
   const lower = (text) => text.charAt(0).toLocaleLowerCase('tr') + text.slice(1);
   const trimDot = (text) => text.replace(/[.\s]+$/, '');
-  const wordCount = (text) => text.trim().split(/\s+/).filter(Boolean).length;
 
   // Soru merceği serbest metni yorumlamaz; söz edimini sınıflar.
   // closed: evet/hayır hükmü isteniyor. particular: yaşam alanı sözlüğünün
@@ -437,20 +439,25 @@
     return false;
   }
 
+  // "Neye, nasıl, hangi…" ile açılan soru belli bir nesneyi değil bir yönü sorar; özel bir şey sayılmaz.
+  const QUESTION_WH = /^(?:ne|neye|neyi|neden|niye|nasıl|nereye|nerede|hangi|hangisi|kim|kime|ne zaman)$/;
+
   function readQuestion(raw) {
     const text = displayQuestion(raw);
     if (!text) return { text: '', closed: false, particular: false };
     let topics = 0;
     let unknowns = 0;
     let closed = false;
+    let wh = false;
     for (const token of questionTokens(raw)) {
+      if (QUESTION_WH.test(token)) wh = true;
       if (isQuestionParticle(token)) { closed = true; continue; }
       if (QUESTION_FUNCTION.has(token)) continue;
       if (isQuestionTopic(token)) { topics += 1; continue; }
       if (isQuestionVerb(token)) continue;
       if (token.length >= 3) unknowns += 1;
     }
-    return { text, closed, particular: unknowns > 0 && topics === 0 };
+    return { text, closed, particular: unknowns > 0 && topics === 0 && !(wh && !closed) };
   }
 
   function questionLens(reading, spread) {
@@ -464,15 +471,15 @@
     if (lens.particular && lens.closed) return `${quote} Kartlar bunu tek tek bilmez; küçük bir tercih olarak okur ve hayırlı ya da hayırsız diye hüküm vermez.`;
     if (lens.particular) return `${quote} Kartlar bunu tek tek bilmez; ona özel bir anlam yüklemez, küçük bir mesele olarak okur.`;
     if (lens.closed) return `${quote} Kartlar bunu evet ya da hayır diye kesmez; eğilimi ve bedelini anlatır.`;
-    return `${quote} Kartlar buna bir liste değil, bir eğilim olarak cevap verir.`;
+    return `${quote} Kartlar buna bir hükümle değil, bir yön göstererek cevap veriyor.`;
   }
 
   function questionSeat(lens, role) {
     if (!lens.text || !role) return '';
     if (role === 'first') {
-      if (lens.particular) return 'Bu yer o özel şeyi değil, bu seçimin nasıl kurulduğunu söyler.';
-      if (lens.closed) return 'Bu yer evet ya da hayır kesmez; eğilimin nereden geldiğini söyler.';
-      return 'Bu yer, sorduğun şeye kartın kendi anlamıyla cevap verir.';
+      if (lens.particular) return 'Kartlar sorduğun o özel şeyi bilmez; bu yer, bu seçimin nasıl kurulduğunu söyler.';
+      if (lens.closed) return 'Bu yer evet ya da hayır demez; eğilimin nereden geldiğini söyler.';
+      return 'Sorduğun şeye ilk cevap bu kartın yerinden geliyor.';
     }
     if (lens.particular && lens.closed) return 'Kapanış da hüküm vermez; bu tercihteki eğilimi gösterir.';
     if (lens.particular) return 'Kapanış o özel şeye anlam yüklemez; meselenin gidişatını gösterir.';
@@ -526,40 +533,14 @@
     return prompt;
   }
 
-  function keywordsOf(card, reversed, cardsApi) {
-    if (card.arcana === 'minor' && !card.court) {
-      const suit = cardsApi.SUITS[card.suit];
-      return [...card.keywords, ...suit.area.split(', ')].slice(0, 3);
-    }
-    return card.keywords.slice(0, 3);
+  // Kartın bu gelişteki anahtar kelimeleri. Düz Büyük Arkana kendi kelimelerini taşır; sayı ve saray kartlarında
+  // kelimeler kartın anlamından gelir (sayının genel teması Kılıç Üçlüsü'ne "işbirliği" dedirtmesin), ters kartta ters anlamdan.
+  function keywordsOf(card, reversed) {
+    if (card.arcana === 'major' && !reversed) return card.keywords.slice(0, 3);
+    const parts = themesOf(card, reversed).replace(/ bir tutum$/, '').split(/, | ve /).map((bit) => bit.trim()).filter(Boolean);
+    return (parts.length ? parts : card.keywords).slice(0, 3);
   }
 
-  const POSITION_FRAMES = {
-    past: 'Bu pozisyon bugünü hazırlayan etkileri anlatır.',
-    present: 'Bu pozisyon şu anın enerjisini anlatır.',
-    future: 'Bu pozisyon mevcut gidişatın eğilimini anlatır; kesin bir sonuç değil, bir yöndür.',
-    self: 'Bu pozisyon senin bu konuya getirdiğin enerjiyi ve tutumu anlatır.',
-    other: 'Bu pozisyon karşı tarafın ilişkiye taşıdığı enerjiyi anlatır.',
-    bond: 'Bu pozisyon aranızdaki bağın şu anki doğasını anlatır.',
-    obstacle: 'Bu pozisyon önündeki zorluğu, aşılması gereken eşiği anlatır.',
-    potential: 'Bu pozisyon en iyi ihtimalle açılabilecek yolu anlatır.',
-    situation: 'Bu pozisyon kararın özünü ve şu anki tabloyu anlatır.',
-    a_path: 'Bu pozisyon ilk yolu seçersen sürecin nasıl akabileceğini anlatır.',
-    a_outcome: 'Bu pozisyon ilk yolun nereye varma eğiliminde olduğunu anlatır.',
-    b_path: 'Bu pozisyon ikinci yolu seçersen sürecin nasıl akabileceğini anlatır.',
-    b_outcome: 'Bu pozisyon ikinci yolun nereye varma eğiliminde olduğunu anlatır.',
-    current: 'Bu pozisyon işte ya da parada şu an olanı anlatır.',
-    strength: 'Bu pozisyon dayanabileceğin gücü anlatır.',
-    advice: 'Bu pozisyon atabileceğin adımı, kartların tavsiyesini anlatır.',
-    outcome: 'Bu pozisyon bu yolda devam edersen varılabilecek yeri anlatır.',
-    challenge: 'Bu pozisyon duruma karışan gücü, kesişen engeli anlatır.',
-    crown: 'Bu pozisyon bilinçli hedefini, ulaşılabilecek en iyi sonucu anlatır.',
-    root: 'Bu pozisyon durumun altındaki kök sebebi anlatır.',
-    environment: 'Bu pozisyon çevrendeki insanları ve dış etkileri anlatır.',
-    hopes_fears: 'Bu pozisyon umutlarını ve korkularını birlikte anlatır.',
-  };
-
-  const QUAL_TR = { hot: 'sıcak', cold: 'soğuk', wet: 'nemli', dry: 'kuru' };
   const ARC_SENTENCE = {
     ascending: 'Hikâye yükselen bir eğri çiziyor; baştaki yük sona doğru hafifliyor.',
     descending: 'Hikâye alçalan bir eğri çiziyor; başlangıçtaki açıklık sona doğru daralıyor.',
@@ -573,117 +554,175 @@
     lambda: 'tepe yapıp inen', flat: 'düz', oscillating: 'dalgalı',
   };
   const BALANCE_SHORT = { heavy: 'ağır', mixed: 'karışık', bright: 'parlak' };
-  const REL_SENTENCE = {
-    amplify: (a, b) => `${a}, ${b} ile aynı yönde güçleniyor.`,
-    intensify: (a, b) => `${a} ile ${b} birlikte ağırlığı artırıyor.`,
-    erode: (a, b) => `${a}, ${b} tarafındaki yükü hafifletiyor.`,
-    resolve: (a, b) => `${a}, ${b} ile gelen zorluğun ardından bir çıkış gösteriyor.`,
-    color: (a, b) => `${a}, ${b} kartına yalnızca bir renk katıyor.`,
-  };
-
-  function firstSentence(text) {
-    const match = String(text).match(/^.*?[.!?](?:\s|$)/);
-    return (match ? match[0] : text).trim();
-  }
 
   function cardLabel(card, reversed) {
     return `${card.nameTr}${reversed ? ' (ters)' : ''}`;
   }
 
-  function volumeSentence(ctx, nameOf) {
-    if (!ctx.volume.from.length) return '';
-    if (ctx.volume.cancelled) return 'İki yanındaki kart birbirine karşıt geldiği için bu kart temiz okunuyor; komşular birbirinin etkisini götürüyor.';
-    const names = ctx.volume.from.map((item) => nameOf(item.key));
-    const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} ve ${names[names.length - 1]}`;
-    if (ctx.volume.band === 'very_loud') return `${who} bu enerjiyi çok yükseltiyor; kart burada yüksek sesle konuşuyor.`;
-    if (ctx.volume.band === 'loud') return `${who} bu enerjiyi belirginleştiriyor; kart bu pozisyonda öne çıkıyor.`;
-    if (ctx.volume.band === 'quiet') return `${who} bu kartın sesini kısıyor; anlam duruyor, daha kısık duyuluyor.`;
-    if (ctx.volume.band === 'muffled') return `${who} bu enerjiyi bastırıyor; kaybolmuyor, yalnızca zor duyuluyor.`;
-    return `${who} yanında dengeli duruyor; enerji ne bastırılıyor ne de abartılıyor.`;
+  // ---------- Okuyucu dili ----------
+  // Her kart için dört parça: kartın anlamı (kart verisinden), bu yerde ne dediği, komşularının etkisi ve
+  // soruya bağı. Motorun planı yalnızca belirgin olduğunda ve sade cümleyle söze girer.
+
+  const TEXT_VERSION = 2;
+  const CONNECTOR = /^(?:ya da tersine|ya da|veya|ama|ancak|yani)\s+/i;
+
+  function meaningOf(card, reversed) {
+    return String((reversed ? card.reversed : card.upright) || '').replace(/\s+/g, ' ').trim();
   }
 
-  // Her yer kendi fiilini kullanır. Aynı kart başka koltuğa geçince cümle de değişir.
-  const PLACE_ANSWER = {
-    today: (n, kw, gist) => `${n} günün tek yerinde. Bugün bakılacak nokta ${kw}: ${gist}`,
-    past: (n, kw, gist) => `${n} geçmişin yerinde. Buraya gelmeni hazırlayan etki ${kw}: ${gist}`,
-    present: (n, kw, gist) => `${n} şimdinin yerinde. Olup bitenin kendisi ${kw}: ${gist}`,
-    future: (n, kw, gist) => `${n} geleceğin yerinde. Bu bir hüküm değil; gidişat ${kw} yönüne eğiliyor: ${gist}`,
-    self: (n, kw, gist) => `${n} senin yerinde. Bu konuya sen ${kw} getiriyorsun: ${gist}`,
-    other: (n, kw, gist) => `${n} karşı tarafın yerinde. Ne düşündüğünü söylemez; ilişkiye ${kw} taşıdığını anlatır: ${gist}`,
-    bond: (n, kw, gist) => `${n} bağın yerinde. Aranızdaki şeyin doğası ${kw}: ${gist}`,
-    obstacle: (n, kw, gist) => `${n} engelin yerinde. ${kw} burada yolu açmıyor, eşiği kuruyor: ${gist}`,
-    potential: (n, kw, gist) => `${n} potansiyelin yerinde. En iyi ihtimal ${kw} tarafına açılıyor: ${gist}`,
-    situation: (n, kw, gist) => `${n} durumun yerinde. Kararın özü ${kw}: ${gist}`,
-    a_path: (n, kw, gist) => `${n} ilk yolun yerinde. Bu yol seçilirse süreç ${kw} ile yürür: ${gist}`,
-    a_outcome: (n, kw, gist) => `${n} ilk yolun varış yerinde. Bu bir hüküm değil; eğilim ${kw}: ${gist}`,
-    b_path: (n, kw, gist) => `${n} ikinci yolun yerinde. Bu yol seçilirse süreç ${kw} ile yürür: ${gist}`,
-    b_outcome: (n, kw, gist) => `${n} ikinci yolun varış yerinde. Bu bir hüküm değil; eğilim ${kw}: ${gist}`,
-    current: (n, kw, gist) => `${n} mevcut durumun yerinde. İşte ya da parada şimdi ${kw} var: ${gist}`,
-    strength: (n, kw, gist) => `${n} gücün yerinde. Dayanabileceğin şey ${kw}: ${gist}`,
-    advice: (n, kw, gist) => `${n} tavsiyenin yerinde. Atılacak adım ${kw} tarafında: ${gist}`,
-    outcome: (n, kw, gist) => `${n} gidişatın yerinde. Devam eden yön ${kw} tarafına eğiliyor: ${gist}`,
-    challenge: (n, kw, gist) => `${n} kesen kartın yerinde. Duruma karışan güç ${kw}: ${gist}`,
-    crown: (n, kw, gist) => `${n} hedefin yerinde. Bilinçli olarak uzanılan şey ${kw}: ${gist}`,
-    root: (n, kw, gist) => `${n} kökün yerinde. Altta duran sebep ${kw}: ${gist}`,
-    environment: (n, kw, gist) => `${n} çevrenin yerinde. Dışarıdan gelen etki ${kw}: ${gist}`,
-    hopes_fears: (n, kw, gist) => `${n} umut ile korkunun yerinde. İkisi birden ${kw} içinden konuşuyor: ${gist}`,
+  // Aşk ya da iş açılımında Büyük Arkana'nın o alana dair cümlesi.
+  function areaNote(card, spread) {
+    if (!card.loveWork || !spread) return '';
+    const parts = splitSentencesTr(card.loveWork);
+    if (spread.id === 'relationship') return parts.filter((p) => !/^İşte\b/.test(p)).join(' ');
+    if (spread.id === 'career') return parts.filter((p) => /^İşte\b/.test(p)).map((p) => p.replace(/^İşte\s+/, 'İş tarafında ')).join(' ');
+    return '';
+  }
+
+  function splitSentencesTr(text) {
+    return String(text || '').split(/(?<=[.!?])\s+/).map((p) => p.trim()).filter(Boolean);
+  }
+
+  function listTr(items) {
+    if (items.length <= 1) return items[0] || '';
+    return `${items.slice(0, -1).join(', ')} ve ${items[items.length - 1]}`;
+  }
+
+  // Kartın anlamından cümle içine oturan kısa temalar: "tutunmak, güvenlik ihtiyacı ve tutumluluk".
+  function themesOf(card, reversed) {
+    const usable = (text) => text.replace(/["“][^"”]+["”]:\s*/g, '').split(/[,.;:]/)
+      .map((bit) => bit.replace(/\s+/g, ' ').trim().replace(CONNECTOR, ''))
+      .filter((bit) => bit.length > 2 && bit.split(' ').length <= 6)
+      .filter((bit) => !/değil|kartı|^(?:sen|seni|sana)\s/i.test(bit) && !/\s(?:var|yok)$/i.test(bit) && !/(?:[dt][ıiuü]r|s[ıiuü]n|[^\s]{3,}(?:[dt]a|[dt]e))$/i.test(bit))
+      .map(lower);
+    // "Ya da …" ile başlayan cümle kartın öbür okumasıdır; ilk okuma yeterince tema veriyorsa karışmaz.
+    const sentences = splitSentencesTr(meaningOf(card, reversed));
+    const main = sentences.filter((sentence, i) => i === 0 || !/^(?:ya da|veya)\b/i.test(sentence));
+    let clauses = usable(main.join(' '));
+    if (clauses.length < 2) clauses = usable(sentences.join(' '));
+    const pool = clauses.length >= 2 ? clauses : [...clauses, ...card.keywords.map(lower)];
+    const picked = [];
+    let words = 0;
+    for (const bit of pool) {
+      if (picked.includes(bit)) continue;
+      const n = bit.split(' ').length;
+      if (picked.length >= 2 && words + n > 10) break;
+      picked.push(bit);
+      words += n;
+      if (picked.length === 3) break;
+    }
+    // Parçalardan biri zaten "ve" taşıyorsa art arda iki "ve" okunmasın: virgülle dizilir.
+    let text = picked.some((bit) => / ve /.test(bit)) ? picked.join(', ') : listTr(picked);
+    // Saray kartları çoğu zaman bir kişiyi sıfatlarla anlatır: "aceleci, dürtüsel ve sabırsız" bir tutumdur.
+    if (card.court && /(?:c[ıiuü]|l[ıiuü]|s[ıiuü]z|[ae]n|[ae]l)$/.test(text)) text += ' bir tutum';
+    return text;
+  }
+
+  // Kartın bu gelişteki yüzü: zorlu mu, destekleyici mi. Zor kartların tersi çoğu zaman rahatlamadır.
+  const HARD_UPRIGHT = new Set(['major-13', 'major-15', 'major-16', 'major-18', 'swords-02', 'swords-03', 'swords-05', 'swords-07', 'swords-08', 'swords-09', 'swords-10', 'cups-04', 'cups-05', 'wands-05', 'wands-10', 'pentacles-05']);
+  const RELIEF_REVERSED = new Set(['major-15', 'major-18', 'swords-03', 'swords-05', 'swords-07', 'swords-08', 'swords-09', 'swords-10', 'cups-04', 'cups-05', 'wands-10', 'pentacles-05']);
+  function toneOf(card, reversed) {
+    if (reversed) return RELIEF_REVERSED.has(card.id) ? 'soft' : 'hard';
+    return HARD_UPRIGHT.has(card.id) ? 'hard' : 'soft';
+  }
+
+  const optionName = (reading, side) => (side === 'a' ? reading.optionA : reading.optionB) || (side === 'a' ? 'A' : 'B');
+
+  // Her yer kendi cümlesini kurar. Aynı kart başka bir yere geçince cevap da değişir.
+  const SEAT = {
+    today: (t) => `Bugünün teması ${t}. Gün içinde bu hal bir karşılaşmada, bir düşüncede ya da küçük bir kararda belirebilir.`,
+    past: (t) => `Geçmişin yerinde bu kart var: geride kalan dönemde ${t} belirleyiciydi. Bugünkü tablonun bir kısmı oradan geliyor.`,
+    present: (t) => `Şimdinin yerinde bu kart duruyor: şu an işin merkezinde ${t} var. Olup bitenin özü burada görünüyor.`,
+    future: (t) => `Geleceğin yerinde bu kart var. Şimdiki gidişat sürerse ${t} öne çıkabilir; bu bir hüküm değil, yolun eğilimi.`,
+    self: (t) => `Senin yerinde bu kart var: bu ilişkiye sen ${t} getiriyorsun. Kart senin tutumunu ve enerjini anlatıyor.`,
+    other: (t, r) => `${r.personName || 'Karşı taraf'} ilişkiye ${t} taşıyor. Kart onun ne düşündüğünü söylemez; ilişkiye getirdiği enerjiyi gösterir.`,
+    bond: (t) => `Aranızdaki bağın şu anki dokusu ${t} ile örülü. İkinizin arasında dolaşan duygu bu.`,
+    obstacle: (t) => `Önünüzdeki eşik ${t} ile ilgili. Bu eşik yolu kapatmaz; üzerinde durmanız gereken yeri gösterir.`,
+    potential: (t) => `İlişki en iyi ihtimalle ${t} yönünde açılabilir. Bu, ikinizin de besleyebileceği bir olasılık.`,
+    situation: (t) => `Kararın özünde ${t} yatıyor. Seçimi zorlaştıran ya da anlamlı kılan şey bu.`,
+    a_path: (t, r) => `${optionName(r, 'a')} yolunu seçersen süreç ${t} ile yürüyebilir. Bu yolun gündelik hali bu kartta görünüyor.`,
+    a_outcome: (t, r) => `${optionName(r, 'a')} yolu ${t} yönüne varma eğiliminde. Bu bir hüküm değil; yolun nereye eğildiğini gösterir.`,
+    b_path: (t, r) => `${optionName(r, 'b')} yolunu seçersen süreç ${t} ile yürüyebilir. Bu yolun gündelik hali bu kartta görünüyor.`,
+    b_outcome: (t, r) => `${optionName(r, 'b')} yolu ${t} yönüne varma eğiliminde. Bu bir hüküm değil; yolun nereye eğildiğini gösterir.`,
+    current: (t) => `İşte ya da parada şu an ${t} öne çıkıyor. Durduğun yer bu; işin bugünkü tonu bu kartta görünüyor.`,
+    'career.obstacle': (t) => `Önündeki en büyük engel ${t} ile ilgili. Onu görmek, aşmanın ilk adımı.`,
+    strength: (t) => `Dayanabileceğin güç ${t}. Zorlandığında buna yaslanabilirsin; bu kart sende zaten var olan bir kaynağı gösteriyor.`,
+    advice: (t) => `Kartların tavsiyesi ${t} tarafında. Atabileceğin bir sonraki adım bu enerjiden geçiyor; onu gündelik bir davranışa çevirmeyi dene.`,
+    outcome: (t) => `Bu yolda devam edersen ${t} öne çıkabilir. Kesin bir son değil; şimdiki yönün vardığı yer.`,
+    'celtic.present': (t) => `Sorunun kalbinde ${t} var. Şu anki durumu en iyi anlatan kart bu.`,
+    challenge: (t) => `Bu kart mevcut durumu kesiyor: seni zorlayan ya da duruma karışan güç ${t}. Hem engel hem ders olabilir.`,
+    crown: (t) => `Bilinçli olarak uzandığın, ulaşabileceğin en iyi yer ${t}. Bu kart seni çeken hedefi ve ideali gösteriyor.`,
+    root: (t) => `Durumun kökünde ${t} yatıyor. Görünenin altında çalışan sebep bu olabilir.`,
+    'celtic.past': (t) => `Yakın geçmişte ${t} etkiliydi. Bu etki çekiliyor ama izi hâlâ duruyor.`,
+    'celtic.future': (t) => `Yakında ${t} belirmeye başlayabilir. Kapıdaki bir sonraki hal bu.`,
+    'celtic.self': (t) => `Bu duruma sen ${t} ile yaklaşıyorsun. Kart senin tutumunu gösteriyor.`,
+    environment: (t) => `Çevrenden ve dış dünyadan gelen etki ${t}. Etrafındaki insanlar ya da koşullar bu enerjiyi taşıyor.`,
+    hopes_fears: (t) => `Umutların ve korkuların ${t} etrafında düğümleniyor. İstediğin ile çekindiğin şey bazen aynı yerde durur.`,
+    'celtic.outcome': (t) => `Gidişat böyle sürerse ${t} öne çıkabilir. Bu bir hüküm değil; bugünkü yönün vardığı yer.`,
   };
 
-  function placedClaim(position, card, drawn, cardsApi) {
-    const kw = keywordsOf(card, drawn.reversed, cardsApi).map((item) => lower(item)).join(', ');
-    const name = cardLabel(card, drawn.reversed);
-    const gist = trimDot(firstSentence(drawn.reversed ? card.reversed : card.upright));
-    const answer = PLACE_ANSWER[position.key] || ((n, themes, body) => `${n} bu yerde ${themes} anlatıyor: ${body}`);
-    const text = answer(name, kw, gist);
-    return /[.!?]$/.test(text) ? text : `${text}.`;
+  // Destekleyici bir yere zor kart, zorlayıcı bir yere olumlu kart düştüğünde cümle kartın yüzüne göre kurulur.
+  const SEAT_HARD = {
+    strength: (t) => `Güç yerinde zorlu bir kart var: ${t}. Buradaki güç, bu halle yüzleşip ondan ders çıkarabilmekten geliyor.`,
+    advice: (t) => `Tavsiye yerinde zorlu bir kart var: ${t}. Kartlar bunu yaşamanı değil, bu hali fark edip ona göre davranmanı öğütlüyor.`,
+    potential: (t) => `Potansiyel yerinde zorlu bir kart var: ${t}. İlişkinin açılması, önce bu temanın konuşulmasına bağlı olabilir.`,
+    crown: (t) => `Tacın yerinde zorlu bir kart var: ${t}. Uzandığın yer şu an bu halin gölgesinde; hedefini yeniden tanımlaman gerekebilir.`,
+    future: (t) => `Geleceğin yerinde zorlu bir kart var. Şimdiki gidişat sürerse ${t} öne çıkabilir; bunu bir uyarı gibi oku, yön değişirse sonuç da değişir.`,
+    outcome: (t) => `Bu yolda devam edersen ${t} öne çıkabilir. Bunu bir uyarı gibi oku: yön değişirse sonuç da değişir.`,
+    'celtic.outcome': (t) => `Gidişat böyle sürerse ${t} öne çıkabilir. Bunu bir hüküm değil, bir uyarı gibi oku; kalpteki düğüm çözüldükçe sonuç da değişebilir.`,
+    'celtic.future': (t) => `Yakında ${t} belirmeye başlayabilir. Bunu önceden görmek, o an geldiğinde hazırlıklı olmanı sağlar.`,
+    a_outcome: (t, r) => `${optionName(r, 'a')} yolu ${t} yönüne varma eğiliminde. Bu yolun bedeli burada görünüyor; bu bir hüküm değil, bir uyarı.`,
+    b_outcome: (t, r) => `${optionName(r, 'b')} yolu ${t} yönüne varma eğiliminde. Bu yolun bedeli burada görünüyor; bu bir hüküm değil, bir uyarı.`,
+  };
+  const SEAT_SOFT = {
+    obstacle: (t) => `Engel yerinde aslında olumlu bir kart var: ${t}. Engel, bu iyi şeye fazla yaslanmak ya da onu kabul etmekte zorlanmak olabilir.`,
+    'career.obstacle': (t) => `Engel yerinde aslında olumlu bir kart var: ${t}. Seni durduran, bu gücü henüz kullanmıyor olman olabilir.`,
+    challenge: (t) => `Kesen kart olumlu bir enerji taşıyor: ${t}. Seni zorlayan, bu iyi şeyi hayatına almakta zorlanman olabilir.`,
+  };
+
+  const REVERSED_NOTE = {
+    past: 'Kart ters geldiği için bu etki tam yaşanmamış, içte kalmış olabilir.',
+    future: 'Kart ters geldiği için bu tema gecikmeli ya da zorlanarak gelebilir.',
+    obstacle: 'Kart ters geldiği için engel dışarıdan çok içeriden, bir çekingenlikten geliyor olabilir.',
+    challenge: 'Kart ters geldiği için bu güç açıkça değil, alttan alta çalışıyor olabilir.',
+    advice: 'Kart ters geldiği için tavsiye önce neyi bırakman gerektiğine bakıyor.',
+    strength: 'Kart ters geldiği için bu güç şu an uykuda; onu yeniden uyandırman gerekebilir.',
+  };
+
+  function seatFor(position, spread, tone) {
+    const pick = (map) => map[`${spread.id}.${position.key}`] || map[position.key];
+    return (tone === 'hard' && pick(SEAT_HARD)) || (tone === 'soft' && pick(SEAT_SOFT)) || pick(SEAT) || ((t) => `${position.label} yerinde ${t} öne çıkıyor.`);
   }
 
-  function positionText(position, drawn, reading, spread, cardsApi, plan, nameOf) {
+  function neighbourNames(ctx, nameOf) {
+    const names = ctx.volume.from.slice(0, 2).map((item) => `${nameOf(item.key)}`);
+    return names.length === 1 ? `${names[0]} kartı` : `${names.join(' ve ')} kartları`;
+  }
+
+  // Motorun ses ölçüsü: yalnızca kart belirgin biçimde güçlenip ya da kısıldığında söylenir.
+  function contextSentence(ctx, nameOf) {
+    if (!ctx || !ctx.volume.from.length) return '';
+    if (ctx.volume.cancelled) return 'İki yanındaki kart birbirinin etkisini götürdüğü için bu kart sade ve temiz okunuyor.';
+    const who = neighbourNames(ctx, nameOf);
+    if (ctx.volume.band === 'very_loud') return `Yanındaki ${who} bu kartı çok güçlendiriyor; okumanın en yüksek sesi burada.`;
+    if (ctx.volume.band === 'loud') return `Yanındaki ${who} bu kartı güçlendiriyor; bu yer okumada öne çıkıyor.`;
+    if (ctx.volume.band === 'muffled') return `Yanındaki ${who} bu kartı bastırıyor; mesajı kaybolmuyor ama zor duyuluyor.`;
+    return '';
+  }
+
+  function seatReading(position, drawn, reading, spread, cardsApi, plan, nameOf) {
     const card = cardsApi.getCard(drawn.cardId);
     const ctx = plan.positions.find((item) => item.key === position.key);
-    const claim = placedClaim(position, card, drawn, cardsApi);
-    const shortClaim = placedClaim(position, card, drawn, cardsApi).replace(/:.*$/, '.');
-    const volume = volumeSentence(ctx, nameOf);
-    const links = plan.surface.links
-      .filter((link) => link.from === position.key)
-      .map((link) => REL_SENTENCE[link.relation](nameOf(position.key), nameOf(link.with)));
-    const hedge = 'Bunu kesin bir hüküm olarak değil, üzerine düşünebileceğin bir eğilim olarak al.';
-    const optional = [];
-    if (ctx.qualityTilt) {
-      const bits = Object.keys(ctx.qualityTilt).map((key) => QUAL_TR[key]).filter(Boolean);
-      if (bits.length) optional.push(`Yanlardan gelen nitelik ${bits.join(' ve ')} bir tona çekiyor.`);
-    }
-    if (drawn.reversed) optional.push('Ters durduğu için bu yerde anlam gecikmeli ya da içe dönük yaşanıyor; düz anlam silinmiyor.');
-    if (card.arcana === 'minor') {
-      const suit = cardsApi.SUITS[card.suit];
-      optional.push(`${suit.nameTr} (${suit.element}) bu yeri ${lower(suit.area)} alanına bağlıyor.`);
-    } else if (card.loveWork && (spread.id === 'relationship' || spread.id === 'career')) {
-      optional.push(card.loveWork);
-    } else if (!drawn.reversed) {
-      optional.push('Bu bir Major Arcana kartı; bu yerde konu gündelik bir ayrıntıdan çok daha geniş bir döngüye işaret ediyor.');
-    }
-    optional.push(`Bu yerin sorusu şu: ${displayPrompt(position, reading)}`);
-    const seat = position.index === 1 ? 'first' : position.index === spread.positions.length ? 'last' : '';
-    const bound = questionSeat(questionLens(reading, spread), seat);
-
-    const build = (body, extras) => [body, volume, ...links, ...extras, bound, hedge].filter(Boolean).join(' ');
-    let extras = optional.slice();
-    let text = build(claim, extras);
-    while (wordCount(text) > 140 && extras.length) {
-      extras.pop();
-      text = build(claim, extras);
-    }
-    if (wordCount(text) > 140) text = build(shortClaim, []);
-    const pads = [
-      'Yer değişirse aynı kart başka bir soruya cevap verir.',
-      'Komşular bu koltuğun sesini değiştirir; kartın oturduğu yer sorunun kendisidir.',
-      'Bu yüzden kartı yerinden ayırıp tek başına okumak, açılımın söylediğini eksik bırakır.',
-    ];
-    for (const pad of pads) {
-      if (wordCount(text) >= 60) break;
-      text = `${text} ${pad}`;
-    }
-    return text;
+    const themes = themesOf(card, drawn.reversed);
+    const tone = toneOf(card, drawn.reversed);
+    let seat = seatFor(position, spread, tone)(themes, reading);
+    if (drawn.reversed && tone === 'soft') seat += ' Kart ters geldiği için zor yüzü gevşiyor; bu bir rahatlama işareti olabilir.';
+    else if (drawn.reversed) seat += ` ${REVERSED_NOTE[position.key] || 'Kart ters geldiği için bu enerji şimdilik tıkalı, gecikmeli ya da içe dönük yaşanıyor olabilir.'}`;
+    const context = contextSentence(ctx, nameOf);
+    const role = position.index === 1 ? 'first' : position.index === spread.positions.length ? 'last' : '';
+    const tie = questionSeat(questionLens(reading, spread), role);
+    const text = [seat, context, tie].filter(Boolean).join(' ');
+    return { seat, context, tie, text, themes, tone, meaning: meaningOf(card, drawn.reversed), area: drawn.reversed ? '' : areaNote(card, spread) };
   }
 
   function dailyText(drawn, cardsApi) {
@@ -732,42 +771,23 @@
     return '';
   }
 
-  function placementSentence(spread, reading, cardsApi) {
-    const seats = spread.positions.map((position) => {
-      const drawn = reading.cards.find((card) => card.positionKey === position.key);
-      const card = cardsApi.getCard(drawn.cardId);
-      return `${displayLabel(position, reading)}: ${cardLabel(card, drawn.reversed)}`;
-    });
-    return `${seats.join(', ')}.`;
-  }
-
-  function loudestSentence(plan, spread, reading, cardsApi) {
+  // Okumanın kalbi: planda en çok öne çıkan kart, yeri ve teması.
+  function heartSentence(plan, spread, reading, cardsApi) {
     const top = plan.positions.slice().sort((a, b) => b.salience - a.salience)[0];
     const position = spread.positions.find((item) => item.key === top.key);
     const drawn = reading.cards.find((card) => card.positionKey === top.key);
-    const name = cardLabel(cardsApi.getCard(drawn.cardId), drawn.reversed);
-    const label = displayLabel(position, reading);
-    if (top.volume.cancelled) return `${label} yerindeki ${name} temiz okunuyor, çünkü yanları birbirini götürüyor.`;
-    const voice = {
-      very_loud: 'en yüksek sesle konuşuyor',
-      loud: 'öne çıkıyor',
-      normal: 'komşularıyla dengede duruyor',
-      quiet: 'kısık kalıyor',
-      muffled: 'bastırılmış duyuluyor',
-    }[top.volume.band];
-    return `${label} yerindeki ${name} bu açılımda ${voice}.`;
+    const card = cardsApi.getCard(drawn.cardId);
+    return `Okumanın kalbinde ${displayLabel(position, reading)} yerindeki ${cardLabel(card, drawn.reversed)} var: ${themesOf(card, drawn.reversed)}.`;
   }
 
   function summaryFromPlan(plan, spread, reading, cardsApi) {
     const frame = questionFrame(questionLens(reading, spread));
     const lines = [];
     if (frame) lines.push(frame);
-    lines.push(placementSentence(spread, reading, cardsApi));
+    lines.push(heartSentence(plan, spread, reading, cardsApi));
     const head = headlineSentence(plan.global.headline[0], plan.global, cardsApi);
-    if (head) lines.push(head);
-    if (lines.length < 3) lines.push(loudestSentence(plan, spread, reading, cardsApi));
-    if (lines.length < 2) lines.push(ARC_SENTENCE[plan.global.valence.arc]);
-    return lines.slice(0, 3).join(' ');
+    lines.push(head || ARC_SENTENCE[plan.global.valence.arc]);
+    return lines.filter(Boolean).slice(0, 3).join(' ');
   }
 
   function celticMore(reading, cardsApi, plan) {
@@ -779,9 +799,7 @@
     const arcs = plan.global.valence.arcs;
     const timeArc = arcs[0] ? ` Zaman çizgisi ${ARC_SHORT[arcs[0].arc]} bir seyir çiziyor.` : '';
     const staffArc = arcs[1] ? ` Sağdaki sütun ${ARC_SHORT[arcs[1].arc]} bir seyir çiziyor.` : '';
-    const essence = plan.global.essenceCard
-      ? ` Sayıların özü ${cardsApi.getCard(fromEngineId(plan.global.essenceCard)).nameTr} kartında toplanıyor.`
-      : '';
+    const essence = '';
     return `Haçın kalbinde ${byKey.present.nameTr} ile ${byKey.challenge.nameTr} karşılaşıyor: durumu belirleyen enerji ile ona karışan güç aynı anda çalışıyor. Sağdaki sütun ${byKey.self.nameTr} ile senden başlayıp ${byKey.outcome.nameTr} ile sonuca uzanıyor; aradaki ${byKey.environment.nameTr} ve ${byKey.hopes_fears.nameTr} kartları, çevrenin ve iç sesinin bu yolu nasıl renklendirdiğini gösteriyor.${timeArc}${staffArc}${essence}${repeated}`;
   }
 
@@ -824,7 +842,13 @@
     const plan = buildReadingPlan(reading, spread);
     if (spread.id === 'daily') {
       const d = dailyText(reading.cards[0], cardsApi);
-      return { summary: d.summary, positions: [{ positionKey: 'today', text: d.text }], source: 'template', engineVersion: plan.engineVersion, plan };
+      const card = cardsApi.getCard(reading.cards[0].cardId);
+      const reversed = reading.cards[0].reversed;
+      return {
+        summary: d.summary,
+        positions: [{ positionKey: 'today', text: d.text, seat: d.text, context: '', tie: '', themes: themesOf(card, reversed), meaning: meaningOf(card, reversed), area: '' }],
+        source: 'template', engineVersion: plan.engineVersion, textVersion: TEXT_VERSION, plan,
+      };
     }
     const byKey = Object.fromEntries(reading.cards.map((card) => [card.positionKey, card]));
     const nameOf = (key) => cardLabel(cardsApi.getCard(byKey[key].cardId), byKey[key].reversed);
@@ -832,11 +856,12 @@
       summary: summaryFromPlan(plan, spread, reading, cardsApi),
       positions: spread.positions.map((position) => ({
         positionKey: position.key,
-        text: positionText(position, byKey[position.key], reading, spread, cardsApi, plan, nameOf),
+        ...seatReading(position, byKey[position.key], reading, spread, cardsApi, plan, nameOf),
       })),
       signals: signals(reading.cards, cardsApi),
       source: 'template',
       engineVersion: plan.engineVersion,
+      textVersion: TEXT_VERSION,
       plan,
     };
     if (spread.id === 'celtic') {
@@ -872,7 +897,7 @@
     return result;
   }
 
-  const api = { createRng, randomSeed, deriveDeck, localDate, isCrisis, similarQuestions, createService, withRetry, signals, elementOf, interpret, displayLabel, displayPrompt, keywordsOf, readQuestion, memoryStorage };
+  const api = { createRng, randomSeed, deriveDeck, localDate, isCrisis, similarQuestions, createService, withRetry, signals, elementOf, interpret, displayLabel, displayPrompt, keywordsOf, readQuestion, memoryStorage, themesOf, meaningOf, areaNote, toneOf, TEXT_VERSION };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.TAROT_READING = api;
 })(typeof window !== 'undefined' ? window : globalThis);
