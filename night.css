@@ -430,11 +430,18 @@ button.lay-card:focus-visible{outline:2px solid var(--night-focus);outline-offse
 .story-text.compare-note{font-style:italic}
 .story-text.closing-text{line-height:1.72}
 .story-status{font:italic 400 18px/1.45 var(--night-display);color:var(--night-gold)}
-/* Kart bölümü: sahne, anlam ve konum. Her parçanın küçük altın bir etiketi var. */
+/* Kart anlatımında her metnin rolü ayrı bir başlık ve zeminle görünür. */
 .story-body{display:flex;flex-direction:column;gap:0;max-width:68ch}
 .story-block{display:flex;flex-direction:column;gap:5px;padding:clamp(9px,1.45dvh,15px) 0;border-top:1px solid var(--night-line)}
 .story-block:first-child{border-top:0;padding-top:2px}
 .story-label{font:500 11px/1.4 var(--night-ui);letter-spacing:.17em;text-transform:uppercase;color:var(--night-gold)}
+.story-body.is-card-story{gap:9px}
+.story-body.is-card-story .story-block{gap:7px;padding:12px 16px;border:1px solid #d8b78236;border-radius:12px;background:#07101fd9}
+.story-body.is-card-story .story-block:first-child{padding-top:12px}
+.story-body.is-card-story .story-block--position-text{border-color:#d8b78285;background:linear-gradient(115deg,#302a28e8,#0b1424e8)}
+.story-body.is-card-story .story-label{display:flex;align-items:center;gap:9px;margin:0;font:600 clamp(14px,1vw,16px)/1.3 var(--night-ui);letter-spacing:0;text-transform:none;color:var(--night-ivory)}
+.story-body.is-card-story .story-label::before{content:"";flex:none;width:3px;height:1em;border-radius:2px;background:var(--night-gold)}
+.story-body.is-card-story .story-block--position-text .story-label{color:var(--night-gold)}
 .story-text:is(.scene-text,.meaning-text,.position-text){font-size:clamp(16px,min(1.18vw,2.1dvh),19px);line-height:1.5}
 .story-text.scene-text{font-style:normal;color:#d9d2c5}
 .story-text.meaning-text{color:var(--night-text)}
@@ -880,6 +887,9 @@ fieldset.setting-row{margin:0;min-width:0}
 @media(max-width:900px){
   .story-head .chips{display:none}
   .story-block{padding-block:8px}
+  .story-body.is-card-story{gap:7px}
+  .story-body.is-card-story .story-block{padding:10px 12px}
+  .story-body.is-card-story .story-block:first-child{padding-top:10px}
   .drawn-list{gap:5px 8px}
   .drawn-row{gap:8px;min-height:52px;padding:5px 7px}
   .drawn-num{width:22px;height:22px;font-size:12px}

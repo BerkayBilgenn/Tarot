@@ -1989,7 +1989,7 @@ function storyChapters(reading, spread, interpretation) {
       const note = NOTES.noteOf(card.id) || {};
       const meaning = [said.meaning || (drawn.reversed ? card.reversed : card.upright), said.area || ''].filter(Boolean).join(' ');
       const here = said.seat ? [said.seat, said.context, said.tie].filter(Boolean).join(' ') : (said.text || '');
-      const place = daily ? 'Bugün için' : 'Bu konumda';
+      const place = daily ? 'Bugünkü yorumun' : `Bu açılımdaki yorum · ${positionName}`;
       return { ...chapter, label: daily ? card.nameTr : seat,
         head: `<div class="story-card-head"><p class="eyebrow story-position">${daily ? 'GÜNÜN KARTI' : `${String(position.index).padStart(2, '0')} / ${String(spread.positions.length).padStart(2, '0')} · ${esc(positionName)}`}</p>
           <div class="story-card-title-row"><h3 class="story-title"><span class="story-card-name">${esc(card.nameTr)}</span></h3>
@@ -1997,8 +1997,8 @@ function storyChapters(reading, spread, interpretation) {
           <div class="story-meta"><span class="card-tr">${esc(card.name)}</span>${drawn.reversed ? ' <span class="badge-reversed">Ters</span>' : ''}</div></div>
           <ul class="chips" aria-label="Anahtar kelimeler">${keywords.map((k) => `<li>${esc(k)}</li>`).join('')}</ul>`,
         blocks: [
-          note.scene ? { cls: 'scene-text', label: 'Kartın sahnesi', text: note.scene } : null,
-          { cls: 'meaning-text', label: drawn.reversed ? 'Ters anlamı' : 'Kartın anlamı', text: meaning },
+          note.scene ? { cls: 'scene-text', label: 'Kartın resminde', text: note.scene } : null,
+          { cls: 'meaning-text', label: drawn.reversed ? 'Ters kartın anlamı' : 'Kartın temel anlamı', text: meaning },
           { cls: 'position-text', label: place, text: here }
         ].filter(Boolean) };
     }
@@ -2082,11 +2082,11 @@ function storyPageHtml(chapter, parts, pageIndex) {
     ? parts.map((part) => {
       const block = chapter.blocks[part.block];
       const title = block.title && part.first !== false ? `<h4 class="story-subtitle">${esc(block.title)}</h4>` : '';
-      const label = block.label && part.first !== false ? `<p class="story-label">${esc(block.label)}</p>` : '';
-      return `${title}<div class="story-block">${label}<p class="story-text ${block.cls}"></p></div>`;
+      const label = block.label ? `<h4 class="story-label">${esc(block.label)}${part.first === false ? ' · devamı' : ''}</h4>` : '';
+      return `${title}<div class="story-block story-block--${block.cls}">${label}<p class="story-text ${block.cls}"></p></div>`;
     }).join('')
     : `<p class="story-status">${esc(chapter.empty || '')}</p>`;
-  return `<div class="story-inner">${head}<div class="story-body">${blocks}</div></div>`;
+  return `<div class="story-inner">${head}<div class="story-body${chapter.kind === 'card' ? ' is-card-story' : ''}">${blocks}</div></div>`;
 }
 
 function paginateChapter(chapter, measure) {
