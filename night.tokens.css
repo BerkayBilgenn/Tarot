@@ -13,9 +13,9 @@
   --night-focus:#f0ce95;--night-danger:#f0a19a;
   --night-display:NightDisplay,Georgia,'Times New Roman',serif;
   --night-ui:NightUI,'Helvetica Neue',Arial,sans-serif;
-  --night-scene:url('assets/night/night-scene.png');
-  --night-back:url('assets/night/card-back-560.png');
-  --night-covers:url('assets/night/hero-card-strip.png');
+  --night-scene:url('assets/night/night-scene.webp');
+  --night-back:url('assets/night/card-back-560.webp');
+  --night-covers:url('assets/night/hero-card-strip.webp');
   --gutter:clamp(20px,4.5vw,72px);
   --night-radius-control:12px;--night-radius-dialog:20px;--night-radius-card:8px;
   --night-card-shadow:0 2px 0 #8c7757,0 5px 0 #544535,0 12px 18px #0008,0 24px 44px #0007;

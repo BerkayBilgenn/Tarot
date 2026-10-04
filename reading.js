@@ -130,6 +130,12 @@
       return reading;
     };
 
+    function priorReadings(list, reading) {
+      return list.slice(0, list.findIndex((item) => item.id === reading.id))
+        .filter((item) => item.userId === reading.userId && item.status === 'complete')
+        .reverse();
+    }
+
     function userId() {
       let id = storage.getItem(DEVICE);
       if (!id) { id = 'anon-' + randomSeed(cryptoImpl).slice(0, 16); storage.setItem(DEVICE, id); }
@@ -242,7 +248,7 @@
       const reading = find(list, readingId);
       const old = reading.interpretation;
       if (!old || old.textVersion !== TEXT_VERSION) {
-        const fresh = interpret(reading, spreads.getSpread(reading.spreadId), cards);
+        const fresh = interpret(reading, spreads.getSpread(reading.spreadId), cards, priorReadings(list, reading));
         if (old && old.closingSource === 'llm' && old.closing) Object.assign(fresh, { closing: old.closing, closingSource: 'llm', closingVoice: old.closingVoice });
         reading.interpretation = fresh;
         save(list);
@@ -294,6 +300,12 @@
       return wait(list.map(publicReading));
     }
 
+    function previousReadings(readingId) {
+      const list = load();
+      const reading = find(list, readingId);
+      return wait(priorReadings(list, reading).map(publicReading));
+    }
+
     function patch(readingId, changes) {
       const list = load();
       const reading = find(list, readingId);
@@ -309,7 +321,7 @@
       const closing = String(text || '').trim().slice(0, 8000);
       reading.interpretation.closing = closing;
       reading.interpretation.closingSource = source === 'template' ? 'template' : 'llm';
-      reading.interpretation.closingVoice = 'okuma-4';
+      reading.interpretation.closingVoice = 'okuma-5';
       save(list);
       return wait(reading.interpretation);
     }
@@ -320,7 +332,7 @@
       return load().some((r) => r.spreadId === spreadId && r.question && t - Date.parse(r.createdAt) < DAY && similarQuestions(r.question, question));
     }
 
-    return { createReading, pick, reveal, complete, markViewed, abandon, get, dailyToday, draft, list: listReadings, patch, saveClosing, recentSimilar, publicReading, userId };
+    return { createReading, pick, reveal, complete, markViewed, abandon, get, dailyToday, draft, list: listReadings, previousReadings, patch, saveClosing, recentSimilar, publicReading, userId };
   }
 
   // Yanıt gelmezse aynı pickIndex ile üç kez daha dener; seçim idempotent olduğu için güvenli.
@@ -517,7 +529,7 @@
     const a = reading.optionA || 'A';
     const b = reading.optionB || 'B';
     switch (position.key) {
-      case 'other': return reading.personName || position.label;
+      case 'other': return reading.personName ? `${reading.personName} (karşı taraf)` : 'Karşı taraf';
       case 'a_path': return reading.optionA ? `${a} · yol` : position.label;
       case 'a_outcome': return reading.optionA ? `${a} · sonuç` : position.label;
       case 'b_path': return reading.optionB ? `${b} · yol` : position.label;
@@ -563,7 +575,15 @@
   // Her kart için dört parça: kartın anlamı (kart verisinden), bu yerde ne dediği, komşularının etkisi ve
   // soruya bağı. Motorun planı yalnızca belirgin olduğunda ve sade cümleyle söze girer.
 
-  const TEXT_VERSION = 2;
+  const TEXT_VERSION = 3;
+
+  function repeatContext(reading, history) {
+    const previous = (history || []).filter((item) => item.id !== reading.id && (!reading.userId || !item.userId || item.userId === reading.userId));
+    const sameCard = spreadId => previous.filter((item) => item.spreadId === spreadId && item.cards && item.cards[0] && item.cards[0].cardId === reading.cards[0].cardId).length;
+    const sameDraw = previous.filter((item) => item.spreadId === reading.spreadId && item.cards && item.cards.length === reading.cards.length &&
+      reading.cards.every((card, i) => item.cards[i].positionKey === card.positionKey && item.cards[i].cardId === card.cardId && !!item.cards[i].reversed === !!card.reversed)).length;
+    return { sameCardCount: reading.spreadId === 'daily' ? sameCard('daily') : 0, sameDrawCount: sameDraw };
+  }
   const CONNECTOR = /^(?:ya da tersine|ya da|veya|ama|ancak|yani)\s+/i;
 
   function meaningOf(card, reversed) {
@@ -725,22 +745,91 @@
     return { seat, context, tie, text, themes, tone, meaning: meaningOf(card, drawn.reversed), area: drawn.reversed ? '' : areaNote(card, spread) };
   }
 
-  function dailyText(drawn, cardsApi) {
+  // Aynı kart dizilimi tekrarlandığında sabit yer metnini yeni bir gözlem sorusuyla değiştir.
+  const REPEAT_DETAIL_FRAMES = [
+    ({ name, label, focus }) => `${label} yerindeki ${name} bu kez ${focus} konusunu ilk tepkinden ayırmanı öneriyor. Kartı görür görmez ne düşündün? Ardından yaşadığın somut olaya bak; ilk düşüncen o olayla gerçekten örtüşüyor mu?`,
+    ({ name, label, focus }) => `${name}, ${label} için ${focus} yönünü açıyor. Önceki okumanda bu sözün karşılığını nerede aramıştın? Bugün aynı yeri değil, farklı bir anı düşün ve iki örnek arasındaki farkı adlandır.`,
+    ({ name, label, focus }) => `Bu defa ${label} yerindeki ${name} ile bir sonuç aramak yerine ${focus} temasının hangi koşulda belirdiğini izle. Koşul değiştiğinde verdiğin tepki de değişiyor mu? Bunu küçük bir olay üzerinden tart.`,
+    ({ name, label, focus }) => `${label} konumunda yine ${name} var. Buradaki ${focus} sana bir imkân gibi mi, dikkat gerektiren bir alan gibi mi geliyor? İki ihtimali de açık tut; hangisini destekleyen gerçek bir örneğin olduğunu kendine sor.`,
+    ({ name, label, focus }) => `${name} kartının ${label} yerindeki sesi bu kez ${focus} ile ilgili. Geçen yorumdan aklında kalan cümleyi düşün. O cümle bugün hâlâ işe yarıyor mu, yoksa elindeki yeni bilgi başka bir soru mu açıyor?`,
+    ({ name, label, focus }) => `${label} yerini ${name} dolduruyor; ${focus} temasına davranışların üzerinden bakabilirsin. Son günlerde neyi sürdürdün, neyi erteledin? Kartın anlattığını bu iki hareketten hangisi daha iyi açıklıyor?`,
+    ({ name, label, focus }) => `Yeniden gördüğün ${name}, ${label} alanında ${focus} hakkında konuşuyor. Bu konuyu hayatının her yerine yaymadan tek bir bağlam seç. Orada senin etkin ne, dış koşulların etkisi ne? İkisini ayrı yaz.`,
+    ({ name, label, focus }) => `${label} için gelen ${name} kartını bu sefer ${focus} açısından sınayabilirsin. Temayı doğrulayan bir olay bulmak kolay olabilir; ona uymayan bir olay da ara. Yorumun sınırını görmek, onu daha dürüst kılar.`,
+    ({ name, label, focus }) => `${name} burada ${focus} temasını taşıyor, fakat ${label} yerindeki anlamını bugünkü durum belirler. İlk okumadan beri hangi isteğin ya da sınırın değişti? Değişmeyen kart ile değişen bakışını yan yana koy.`,
+    ({ name, label, focus }) => `${label} yerinde tekrar ${name} belirdi. ${focus} üzerine hemen karar kurma; önce ne bildiğini, neyi yalnızca umduğunu ayır. Sonra bu kartın sorusuna bugün verebildiğin en somut yanıtı düşün.`,
+  ];
+
+  function repeatDetail(card, drawn, label, repeats, offset) {
+    const parts = meaningOf(card, drawn.reversed).split(/[,.;]/).map((part) => part.trim().replace(/^(?:ya da|veya)\s+/i, '')).filter(Boolean);
+    const focus = lower(parts[(repeats + offset) % (parts.length || 1)] || card.keywords[0]);
+    const frame = REPEAT_DETAIL_FRAMES[(repeats - 1 + offset) % REPEAT_DETAIL_FRAMES.length];
+    const text = frame({ name: card.nameTr, label, focus });
+    return text + (drawn.reversed ? ` ${reversedDetail(card)}` : '');
+  }
+
+  function reversedDetail(card) {
+    return toneOf(card, true) === 'soft'
+      ? 'Ters gelişte zorlayıcı yan gevşeyebilir; kartın sunduğu rahatlama olasılığını kendi durumunla tart.'
+      : 'Ters gelişte bu tema gecikmeli ya da içe dönük yaşanabilir; hangi kısmın sana uyduğunu gözlemle.';
+  }
+
+  function readingVariant(id) {
+    return [...String(id || '')].reduce((hash, char) => (hash * 33 + char.charCodeAt(0)) >>> 0, 0) % 10;
+  }
+
+  const DAILY_FRESH_OPENINGS = [
+    ({ name, focus }) => `${name} bugün ${focus} konusuna dikkat çekiyor. Bu sözü bütün güne yaymak yerine, hangi tek anda belirginleştiğini görmeye çalış.`,
+    ({ name, focus }) => `Günün kartı ${name}; onun ${focus} yönü bir olayı farklı okumaya çağırabilir. Olayın kendisiyle ona verdiğin tepkiyi birbirinden ayır.`,
+    ({ name, focus }) => `${name} ile açılan bu günde ${focus} temasını önce küçük seçimlerinde ara. Hangi davranışın bu söze yaklaşıyor, hangisi senden uzak duruyor?`,
+    ({ name, focus }) => `Bugün ${name} kartındaki ${focus} sözüne bir soru gibi bak. Cevabı karttan hazır almak yerine, gün içinde karşılaştığın bir ayrıntıyla sınayabilirsin.`,
+    ({ name, focus }) => `${focus} bugün ${name} kartının öne çıkan yanı. Sana yakın gelen bir örnek bul; ardından bu yoruma uymayan bir örnek de düşün.`,
+  ];
+  const DAILY_FRESH_ACTIONS = [
+    'Akşama doğru aklında kalan örneği not et. Bir şeyi hemen çözmek zorunda değilsin; önce neyi gerçekten gördüğünü adlandırman yeter.',
+    'Günün sonunda ilk düşüncenle sonradan fark ettiğin şeyi karşılaştır. Arada bir fark varsa, kartın sana açtığı yer orası olabilir.',
+  ];
+
+  const REPEAT_SUMMARY_FRAMES = [
+    ({ subject, scope, count, focus }) => `Yeniden gelen ${subject}, ${focus} yönünü açıyor; ${scope} toplam ${count} kez karşılaştın. Önceki yorumla bugünkü durumun arasındaki farkı düşün.`,
+    ({ subject, startScope, count, focus }) => `${startScope} toplam ${count} kez karşılaştın. Bu defa ${subject} için ${focus} temasının hangi olayda belirginleştiğine bak.`,
+    ({ subject, startScope, count, focus }) => `Bugün ${subject} için ${focus} öne çıkıyor. ${startScope} toplam ${count} kez karşılaştın; bu aynı sonuca varman gerektiği anlamına gelmiyor.`,
+    ({ subject, scope, count, startFocus }) => `${subject} yeniden dikkatini çekiyor; ${scope} toplam ${count} kez karşılaştın. ${startFocus} ile ilgili önceki varsayımını bugünkü bilginle sınayabilirsin.`,
+    ({ subject, startScope, count, focus }) => `${startScope} toplam ${count} kez karşılaştın; ${subject} bu kez ${focus} yönünden okunabilir. Bu konuda neyin değiştiğini tek bir örnekle anlat.`,
+    ({ subject, startScope, count, focus }) => `Bu kez ${subject} için ${focus} üzerinde dur. ${startScope} toplam ${count} kez karşılaştın; bildiğin şey ile beklediğin şeyi ayır.`,
+    ({ subject, scope, count, startFocus }) => `${subject} yine karşında; ${scope} toplam ${count} kez karşılaştın. ${startFocus} temasını doğrulayan kadar ona uymayan bir olayı da hesaba kat.`,
+    ({ subject, startScope, count, startFocus }) => `${startFocus} bugün ${subject} için seçilen odak. ${startScope} toplam ${count} kez karşılaştın; bakışındaki hangi ayrıntının değiştiğini fark et.`,
+    ({ subject, startScope, count, focus }) => `${startScope} toplam ${count} kez karşılaştın; ${subject} için bugün ${focus} konuşuyor. İlk tepkinle yaşadığın somut olayı birbirinden ayır.`,
+    ({ subject, startScope, count, focus }) => `Tekrar gelen ${subject} bu defa ${focus} temasını açıyor. ${startScope} toplam ${count} kez karşılaştın; bugün sana ait küçük bir adımı düşün.`,
+  ];
+
+  function repeatedSummary(subject, scope, count, focus) {
+    const startScope = scope.charAt(0).toLocaleUpperCase('tr') + scope.slice(1);
+    const startFocus = focus.charAt(0).toLocaleUpperCase('tr') + focus.slice(1);
+    return REPEAT_SUMMARY_FRAMES[(count - 2) % REPEAT_SUMMARY_FRAMES.length]({ subject, scope, startScope, count, focus, startFocus });
+  }
+
+  function dailyText(drawn, cardsApi, repeats, variation) {
     const card = cardsApi.getCard(drawn.cardId);
     const bits = String(drawn.reversed ? card.reversed : card.upright)
       .split(/[,.]/)
-      .map((bit) => bit.replace(/\s+/g, ' ').trim())
+      .map((bit) => bit.replace(/\s+/g, ' ').trim().replace(/^(?:ya da|veya)\s+/i, ''))
       .filter((bit) => bit.length > 2)
       .slice(0, 3)
       .map((bit) => bit.charAt(0).toLocaleLowerCase('tr') + bit.slice(1));
-    const focus = bits[0] || lower(card.keywords[0]);
+    const focus = bits[(repeats || variation) % (bits.length || 1)] || lower(card.keywords[0]);
     const list = bits.length <= 1 ? focus : bits.length === 2 ? `${bits[0]} ya da ${bits[1]}` : `${bits.slice(0, -1).join(', ')} ya da ${bits[bits.length - 1]}`;
     const turn = drawn.reversed
-      ? 'Ters geldiği için bugün bu tam açılmayabilir; bir gecikme ya da içine attığın bir hal olarak gelebilir.'
+      ? reversedDetail(card)
       : 'Düz geldiği için bugün bu hal sana yakın durabilir.';
     return {
-      summary: `Bugün ${card.nameTr} ile açılıyorsun. Gün, ${focus} etrafında dönebilir. ${drawn.reversed ? 'Enerji içe dönük ya da gecikmeli gelebilir.' : 'Bu enerji bugün görünür bir kapı gibi durabilir.'}`,
-      text: `Bugün sana ${card.nameTr} geldi. Gün, ${list || focus} etrafında dönebilir. ${turn} Gün içinde bu hal nerede belirirse, kart orada konuşuyor demektir. Bunu tek bir saate bağlama; günün herhangi bir anında çıkabilir. Akşama her şeyi bitirmek zorunda değilsin. Bugün bu hale küçük bir yer açman yeter. Acele bir hüküm kurma.`,
+      summary: repeats
+        ? repeatedSummary(card.nameTr, 'tamamladığın günlük okumalarda bu kartla', repeats + 1, focus)
+        : `Bugün ${card.nameTr} ile açılıyorsun. Gün, ${focus} etrafında dönebilir. ${drawn.reversed ? reversedDetail(card) : 'Bu enerji bugün görünür bir kapı gibi durabilir.'}`,
+      text: repeats
+        ? repeatDetail(card, drawn, 'Bugün', repeats, 0)
+        : variation
+          ? `${DAILY_FRESH_OPENINGS[variation % DAILY_FRESH_OPENINGS.length]({ name: card.nameTr, focus })} ${DAILY_FRESH_ACTIONS[Math.floor(variation / DAILY_FRESH_OPENINGS.length) % DAILY_FRESH_ACTIONS.length]}${drawn.reversed ? ` ${reversedDetail(card)}` : ''}`
+        : `Bugün sana ${card.nameTr} geldi. Gün, ${list || focus} etrafında dönebilir. ${turn} Gün içinde bu hal nerede belirirse, kart orada konuşuyor demektir. Bunu tek bir saate bağlama; günün herhangi bir anında çıkabilir. Akşama her şeyi bitirmek zorunda değilsin. Bugün bu hale küçük bir yer açman yeter. Acele bir hüküm kurma.`,
     };
   }
 
@@ -780,7 +869,15 @@
     return `Okumanın kalbinde ${displayLabel(position, reading)} yerindeki ${cardLabel(card, drawn.reversed)} var: ${themesOf(card, drawn.reversed)}.`;
   }
 
-  function summaryFromPlan(plan, spread, reading, cardsApi) {
+  function summaryFromPlan(plan, spread, reading, cardsApi, repeats) {
+    if (repeats) {
+      const position = spread.positions[(repeats - 1) % spread.positions.length];
+      const drawn = reading.cards.find((card) => card.positionKey === position.key);
+      const card = cardsApi.getCard(drawn.cardId);
+      const parts = meaningOf(card, drawn.reversed).split(/[,.;]/).map((part) => part.trim().replace(/^(?:ya da|veya)\s+/i, '')).filter(Boolean);
+      const focus = lower(parts[repeats % (parts.length || 1)] || card.keywords[0]);
+      return repeatedSummary(`${displayLabel(position, reading)} yerindeki ${cardLabel(card, drawn.reversed)}`, 'tamamladığın bu açılımda aynı dizilimle', repeats + 1, focus);
+    }
     const frame = questionFrame(questionLens(reading, spread));
     const lines = [];
     if (frame) lines.push(frame);
@@ -838,10 +935,11 @@
     })));
   }
 
-  function interpret(reading, spread, cardsApi) {
+  function interpret(reading, spread, cardsApi, history) {
     const plan = buildReadingPlan(reading, spread);
+    const repeats = repeatContext(reading, history);
     if (spread.id === 'daily') {
-      const d = dailyText(reading.cards[0], cardsApi);
+      const d = dailyText(reading.cards[0], cardsApi, repeats.sameCardCount, readingVariant(reading.id));
       const card = cardsApi.getCard(reading.cards[0].cardId);
       const reversed = reading.cards[0].reversed;
       return {
@@ -853,11 +951,14 @@
     const byKey = Object.fromEntries(reading.cards.map((card) => [card.positionKey, card]));
     const nameOf = (key) => cardLabel(cardsApi.getCard(byKey[key].cardId), byKey[key].reversed);
     const result = {
-      summary: summaryFromPlan(plan, spread, reading, cardsApi),
-      positions: spread.positions.map((position) => ({
-        positionKey: position.key,
-        ...seatReading(position, byKey[position.key], reading, spread, cardsApi, plan, nameOf),
-      })),
+      summary: summaryFromPlan(plan, spread, reading, cardsApi, repeats.sameDrawCount),
+      positions: spread.positions.map((position) => {
+        const drawn = byKey[position.key];
+        const base = seatReading(position, drawn, reading, spread, cardsApi, plan, nameOf);
+        if (!repeats.sameDrawCount) return { positionKey: position.key, ...base };
+        const seat = repeatDetail(cardsApi.getCard(drawn.cardId), drawn, displayLabel(position, reading), repeats.sameDrawCount, position.index - 1);
+        return { positionKey: position.key, ...base, seat, text: [seat, base.context, base.tie].filter(Boolean).join(' ') };
+      }),
       signals: signals(reading.cards, cardsApi),
       source: 'template',
       engineVersion: plan.engineVersion,
@@ -897,7 +998,7 @@
     return result;
   }
 
-  const api = { createRng, randomSeed, deriveDeck, localDate, isCrisis, similarQuestions, createService, withRetry, signals, elementOf, interpret, displayLabel, displayPrompt, keywordsOf, readQuestion, memoryStorage, themesOf, meaningOf, areaNote, toneOf, TEXT_VERSION };
+  const api = { createRng, randomSeed, deriveDeck, localDate, isCrisis, similarQuestions, createService, withRetry, signals, elementOf, interpret, repeatContext, displayLabel, displayPrompt, keywordsOf, readQuestion, memoryStorage, themesOf, meaningOf, areaNote, toneOf, TEXT_VERSION };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.TAROT_READING = api;
 })(typeof window !== 'undefined' ? window : globalThis);

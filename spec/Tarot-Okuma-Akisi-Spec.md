@@ -148,7 +148,7 @@ Her ekran için bileşenler, durumlar ve mikro metinler. Tırnak içindeki metin
 | Aşk | "İlişkin ve duyguların" | "5 kart · 4 dk" |
 | İş / Para | "Kariyer, iş ve maddi konular" | "5 kart · 4 dk" |
 | Karar | "İki seçenek arasında kaldıysan" | "5 kart · 4 dk" |
-| Genel | "Aklındaki herhangi bir soru" | "3 kart · 2 dk" |
+| Genel | "Hayatına genel bir bakış" | "3 kart · 2 dk" |
 
 - **Durum — günün kartı çekildi:** "Bugün" kartında çekilen kartın küçük görseli ve "Bugün çekildi" rozeti görünür; dokununca kayıtlı yorum açılır.
 - **Durum — yarım okuma:** Ekranın üstünde "Yarım kalan okuman var · Devam et" banner'ı.

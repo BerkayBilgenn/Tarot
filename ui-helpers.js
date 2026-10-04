@@ -264,7 +264,7 @@
       ...(hasComparison ? [{ id: 'comparison', kind: 'comparison' }] : []),
       ...(hasPairs ? [{ id: 'pairs', kind: 'pairs' }] : []),
       { id: 'closing', kind: 'closing' },
-      { id: 'notes', kind: 'notes' }
+      { id: 'finish', kind: 'finish' }
     ];
     return spreadId === 'daily' ? [...cards, summary, ...tail] : [summary, ...cards, ...tail];
   }

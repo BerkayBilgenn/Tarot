@@ -86,7 +86,7 @@
     { id: 'love', title: 'Aşk', sub: 'İlişkin ve duyguların', spreadId: 'relationship' },
     { id: 'work', title: 'İş / Para', sub: 'Kariyer, iş ve maddi konular', spreadId: 'career' },
     { id: 'decision', title: 'Karar', sub: 'İki seçenek arasında kaldıysan', spreadId: 'decision' },
-    { id: 'general', title: 'Genel', sub: 'Aklındaki herhangi bir soru', spreadId: 'three', detailedSpreadId: 'celtic' },
+    { id: 'general', title: 'Genel', sub: 'Hayatına genel bir bakış', spreadId: 'three', detailedSpreadId: 'celtic' },
   ];
 
   const PLACEHOLDERS = {

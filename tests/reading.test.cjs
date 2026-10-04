@@ -9,6 +9,16 @@ const R = require('../reading.js');
 const SEED = '00112233445566778899aabbccddeeff';
 const ids = cards.CARDS.map((card) => card.id);
 
+function phraseOverlap(a, b) {
+  const grams = (text) => {
+    const words = text.toLocaleLowerCase('tr').match(/[\p{L}\p{N}]+/gu) || [];
+    return new Set(words.slice(0, -3).map((_, i) => words.slice(i, i + 4).join(' ')));
+  };
+  const left = grams(a);
+  const right = grams(b);
+  return [...left].filter((part) => right.has(part)).length / Math.min(left.size, right.size);
+}
+
 function service(overrides) {
   let t = new Date('2026-09-29T09:00:00');
   const clock = { set: (d) => { t = new Date(d); } };
@@ -165,6 +175,120 @@ test('a saved closing stays on the cached reading', async () => {
   assert.equal(saved.source, 'template');
   assert.equal(saved.positions.length, 3);
   assert.equal((await svc.complete(readingId)).closing, saved.closing);
+});
+
+test('ten repeat daily draws keep their card but receive distinct readings', async () => {
+  const storage = R.memoryStorage();
+  const { svc } = service({ storage });
+  const summaries = [];
+  const details = [];
+  for (let i = 0; i < 10; i++) {
+    const { readingId } = await svc.createReading({ spreadId: 'daily', forceNew: true });
+    await svc.pick(readingId, 0, i);
+    const saved = JSON.parse(storage.getItem('kd.readings.v1'));
+    const current = saved.find((item) => item.id === readingId);
+    current.cards[0].cardId = 'major-03';
+    current.cards[0].reversed = false;
+    storage.setItem('kd.readings.v1', JSON.stringify(saved));
+    const result = await svc.complete(readingId);
+    await svc.markViewed(readingId);
+    summaries.push(result.summary);
+    details.push(result.positions[0].text);
+    assert.equal((await svc.get(readingId)).cards[0].cardId, 'major-03');
+  }
+  assert.equal(new Set(summaries).size, 10);
+  assert.equal(new Set(details).size, 10);
+  for (let i = 0; i < summaries.length; i++) {
+    for (let j = 0; j < i; j++) assert.ok(phraseOverlap(summaries[i], summaries[j]) < 0.65, `daily summary ${i + 1} resembles ${j + 1}`);
+  }
+  for (let i = 0; i < details.length; i++) {
+    for (let j = 0; j < i; j++) assert.ok(phraseOverlap(details[i], details[j]) < 0.65, `daily detail ${i + 1} resembles ${j + 1}`);
+  }
+});
+
+test('ten first daily readings of one card do not share the whole detail', () => {
+  const spread = spreads.getSpread('daily');
+  const draw = [{ positionKey: 'today', cardId: 'major-03', reversed: false }];
+  const details = [];
+  for (let i = 0; i < 10; i++) {
+    const current = R.interpret({ id: `r-${i}`, spreadId: 'daily', cards: draw }, spread, cards).positions[0].text;
+    for (const prior of details) assert.ok(phraseOverlap(current, prior) < 0.65, `first daily reading ${i + 1} repeats a detail`);
+    details.push(current);
+  }
+});
+
+test('closing history contains only this reader\'s earlier completed readings', async () => {
+  const storage = R.memoryStorage();
+  const { svc } = service({ storage });
+  const first = await svc.createReading({ spreadId: 'daily' });
+  await svc.pick(first.readingId, 0, 1);
+  await svc.complete(first.readingId);
+  await svc.markViewed(first.readingId);
+  const second = await svc.createReading({ spreadId: 'daily', forceNew: true });
+  assert.deepEqual((await svc.previousReadings(second.readingId)).map((item) => item.id), [first.readingId]);
+  const saved = JSON.parse(storage.getItem('kd.readings.v1'));
+  saved[0].userId = 'someone-else';
+  storage.setItem('kd.readings.v1', JSON.stringify(saved));
+  assert.deepEqual(await svc.previousReadings(second.readingId), []);
+});
+
+test('the same three-card draw acknowledges a repeat in its summary', () => {
+  const spread = spreads.getSpread('three');
+  const first = {
+    id: 'first', spreadId: 'three', question: 'Bu dönem neye bakmalıyım?',
+    cards: spread.positions.map((position, i) => ({ positionKey: position.key, cardId: cards.CARDS[i + 3].id, reversed: false })),
+  };
+  const again = { ...first, id: 'again' };
+  const original = R.interpret(first, spread, cards);
+  const repeated = R.interpret(again, spread, cards, [first]);
+  assert.notEqual(repeated.summary, original.summary);
+  assert.match(repeated.summary, /yeniden|tekrar/i);
+});
+
+test('ten identical three-card draws reframe every position', () => {
+  const spread = spreads.getSpread('three');
+  const draw = spread.positions.map((position, i) => ({ positionKey: position.key, cardId: cards.CARDS[i + 3].id, reversed: false }));
+  const history = [];
+  const details = spread.positions.map(() => []);
+  const summaries = [];
+  for (let i = 0; i < 10; i++) {
+    const reading = { id: `repeat-${i}`, spreadId: 'three', question: 'Neye dikkat etmeliyim?', cards: draw };
+    const result = R.interpret(reading, spread, cards, history);
+    for (const prior of summaries) assert.ok(phraseOverlap(result.summary, prior) < 0.65, `summary repeated on reading ${i + 1}`);
+    summaries.push(result.summary);
+    result.positions.forEach((position, index) => {
+      for (const prior of details[index]) assert.ok(phraseOverlap(position.text, prior) < 0.65, `${position.positionKey} repeated on reading ${i + 1}`);
+      details[index].push(position.text);
+    });
+    history.unshift(reading);
+  }
+});
+
+test('a repeated reversed relief card keeps its tone and question link', () => {
+  const spread = spreads.getSpread('three');
+  const draw = [
+    { positionKey: 'past', cardId: 'major-15', reversed: true },
+    { positionKey: 'present', cardId: 'major-16', reversed: false },
+    { positionKey: 'future', cardId: 'major-17', reversed: false },
+  ];
+  const first = { id: 'first-relief', spreadId: 'three', question: 'Bu dönemde neyi bırakmalıyım?', cards: draw };
+  const again = { ...first, id: 'again-relief' };
+  const original = R.interpret(first, spread, cards).positions[0];
+  const repeated = R.interpret(again, spread, cards, [first]).positions[0];
+  assert.match(original.seat, /rahatlama/);
+  assert.match(repeated.text, /rahatlama|gevşem/);
+  assert.doesNotMatch(repeated.text, /gecikmesi ya da içe dönmesi/);
+  assert.equal(repeated.context, original.context);
+  assert.equal(repeated.tie, original.tie);
+  assert.ok(repeated.tie);
+});
+
+test('a repeated reversed clause drops the leading connector', () => {
+  const spread = spreads.getSpread('daily');
+  const draw = [{ positionKey: 'today', cardId: 'swords-03', reversed: true }];
+  const first = { id: 'first', spreadId: 'daily', cards: draw };
+  const repeated = R.interpret({ ...first, id: 'again' }, spread, cards, [first, { ...first, id: 'second' }, { ...first, id: 'third' }]);
+  assert.doesNotMatch(repeated.positions[0].text, /ya da bastırılmış acı temas/i);
 });
 
 test('contextual plan changes how the same cards are read', () => {
@@ -329,6 +453,12 @@ function fakeSlot(badge, num) {
 }
 
 const PAGE_SPREADS = ['three', 'relationship', 'decision', 'career', 'celtic'];
+
+test('relationship cards identify the other person explicitly', () => {
+  const other = spreads.getSpread('relationship').positions.find((position) => position.key === 'other');
+  assert.equal(R.displayLabel(other, {}), 'Karşı taraf');
+  assert.equal(R.displayLabel(other, { personName: 'Deniz' }), 'Deniz (karşı taraf)');
+});
 
 test('badges are 1..N, unique, and the same numbers as the legend', () => {
   for (const id of PAGE_SPREADS) {

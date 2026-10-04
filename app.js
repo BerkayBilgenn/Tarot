@@ -207,6 +207,7 @@ const badgeSize = () => (window.innerWidth <= 400 ? 18 : 26);
 // Etiket payı kalkınca kartlar büyür.
 function badged(spread, mode) {
   if (spread.id === 'celtic') return ['preview', 'reveal', 'reading'].includes(mode);
+  if (spread.id === 'relationship' && mode === 'reveal') return true;
   // Telefonda yorumda kartın altında etiket yoktur; numara rozeti kartı listedeki ve anlatımdaki yerine bağlar.
   if (mode === 'reading' && isMobile()) return spread.cardCount > 1;
   return mode === 'reveal' && isMobile() && (frameFor(spread) === 'map' || spread.cardCount >= 5);
@@ -354,7 +355,7 @@ function slotGeometry(spread, width, height, mode, narrow, fit = {}) {
 
 // ---------- Durum ----------
 
-const STEP_NUMBER = { intent: 1, confirm: 2, question: 3, shuffle: 4, pick: 5, reveal: 6, reading: 8 };
+const STEP_NUMBER = { intent: 1, confirm: 2, shuffle: 3, pick: 4, reveal: 5, reading: 6 };
 
 const state = {
   step: 'intent',
@@ -523,7 +524,6 @@ const inReading = () => state.step === 'shuffle' || state.step === 'pick' || sta
 function back() {
   switch (state.step) {
     case 'confirm': return go('intent');
-    case 'question': return go('confirm');
     case 'shuffle':
     case 'pick':
     case 'reveal': return openLeaveDialog();
@@ -793,14 +793,18 @@ function captionFor(position) {
 
 RENDERERS.confirm = () => {
   const spread = currentSpread();
+  const decision = spread.inputs.options === 'required';
   setProgress('');
   setActions({
     back: { label: 'Başka açılım seç', onClick: () => go('intent') },
     primary: {
-      label: 'Devam',
+      label: 'Kartları karıştır',
+      disabled: decision && !(state.inputs.optionA.trim() && state.inputs.optionB.trim()),
       onClick: () => {
+        if (decision && !(state.inputs.optionA.trim() && state.inputs.optionB.trim())) return;
+        if (ENGINE.isCrisis('', state.inputs.optionA, state.inputs.optionB)) return showCrisis();
         track('spread_confirmed', { spreadId: state.spreadId, depth: state.spreadId === 'celtic' ? 'detailed' : 'quick' });
-        go('question');
+        go('shuffle');
       }
     },
     statusHtml: readyStatusHtml(spread.cardCount)
@@ -814,8 +818,24 @@ RENDERERS.confirm = () => {
         </aside>
         <div class="map-focus" id="map-focus" aria-hidden="true"></div>
       </div>
+      ${decision ? `<div class="decision-options" role="group" aria-label="Karşılaştırılacak iki seçenek">
+        <label class="field"><span>A seçeneği</span><input id="optionA" maxlength="${SPREADS.LIMITS.option}" autocomplete="off" value="${esc(state.inputs.optionA)}" placeholder="İlk seçenek"></label>
+        <label class="field"><span>B seçeneği</span><input id="optionB" maxlength="${SPREADS.LIMITS.option}" autocomplete="off" value="${esc(state.inputs.optionB)}" placeholder="İkinci seçenek"></label>
+      </div>` : ''}
     </div>`;
   bindSpreadMap();
+  if (decision) {
+    $('.decision-options').addEventListener('input', (event) => {
+      if (!['optionA', 'optionB'].includes(event.target.id)) return;
+      state.inputs[event.target.id] = event.target.value;
+      primaryBtn.disabled = !(state.inputs.optionA.trim() && state.inputs.optionB.trim());
+      renderPositionList(spread);
+      $$('#layout .lay-slot').forEach((slot) => {
+        const position = spread.positions.find((item) => item.key === slot.dataset.key);
+        if (position) updateSlotLabel(slot, position, 'preview');
+      });
+    });
+  }
   if (state.intentId === 'general') {
     $('#depth-slot').innerHTML = `<div class="segmented depth-control" role="radiogroup" aria-label="Okuma derinliği">
         <button type="button" role="radio" data-depth="three" aria-checked="${spread.id === 'three'}" tabindex="${spread.id === 'three' ? 0 : -1}">Hızlı · 3 kart</button>
@@ -921,60 +941,7 @@ function setDepth(spreadId) {
   morphLayout(layout, spread, 'preview');
 }
 
-// ---------- 3 · Soru ----------
-
-RENDERERS.question = () => {
-  const spread = currentSpread();
-  const decision = spread.inputs.options === 'required';
-  const L = SPREADS.LIMITS;
-  const counter = (id, max) => `<span class="counter" id="${id}-count" aria-live="off">${(state.inputs[id] || '').length} / ${max}</span>`;
-  setHeading(decision ? 'İki yolu masaya koy' : 'Sorunu yaz', `${UI.spreadDisplayName(spread.name)} · ${decision ? 'A ve B zorunlu' : 'İsteğe bağlı'}`);
-  setProgress('');
-  const deck = `<div class="question-altar" aria-hidden="true"><span class="question-deck">${'<span class="card-back"></span>'.repeat(3)}</span></div>`;
-  body.innerHTML = `<form class="question-step" id="question-form" novalidate>
-      ${deck}
-      ${decision ? '' : '<p class="question-invite">Bir nefes al. Sorunu destenin önüne bırak.</p>'}
-      ${decision ? `<div class="option-row">
-          <label class="field"><span>A seçeneği</span><input id="optionA" maxlength="${L.option}" required autocomplete="off" value="${esc(state.inputs.optionA)}" placeholder="İstanbul'da kal">${counter('optionA', L.option)}</label>
-          <label class="field"><span>B seçeneği</span><input id="optionB" maxlength="${L.option}" required autocomplete="off" value="${esc(state.inputs.optionB)}" placeholder="Berlin'e taşın">${counter('optionB', L.option)}</label>
-        </div>` : ''}
-      <label class="field"><span>${decision ? 'Biraz bağlam ekle' : 'Sorun'}</span>
-        <textarea id="question" maxlength="${L.question}" rows="${decision ? 2 : 3}" placeholder="${esc(SPREADS.PLACEHOLDERS[spread.id] || '')}">${esc(state.inputs.question)}</textarea>${counter('question', L.question)}</label>
-      ${spread.inputs.personName ? `<label class="field"><span>Kişinin adı</span><input id="personName" maxlength="${L.personName}" autocomplete="off" value="${esc(state.inputs.personName)}" placeholder="İsteğe bağlı">${counter('personName', L.personName)}</label>` : ''}
-      <p class="hint" id="question-hint">${decision ? 'İki seçeneği de yazmalısın.' : 'Açık uçlu sorulara yer aç: “Olacak mı?” yerine “Neye dikkat etmeliyim?”'}</p>
-      <p class="soft-warning" id="repeat-warning" hidden>Aynı soruyu kısa sürede tekrar sormak okumayı bulanıklaştırır. Yine de devam edebilirsin.</p>
-    </form>`;
-  const form = $('#question-form');
-  const canContinue = () => !decision || (state.inputs.optionA.trim() && state.inputs.optionB.trim());
-  const refresh = () => {
-    primaryBtn.disabled = !canContinue();
-    $('#repeat-warning').hidden = !(state.inputs.question.trim() && service.recentSimilar(spread.id, state.inputs.question));
-  };
-  form.addEventListener('input', (event) => {
-    const field = event.target;
-    if (!(field.id in state.inputs)) return;
-    state.inputs[field.id] = field.value;
-    const max = Number(field.getAttribute('maxlength'));
-    const count = $(`#${field.id}-count`);
-    count.textContent = `${field.value.length} / ${max}`;
-    count.classList.toggle('is-full', field.value.length >= max);
-    refresh();
-  });
-  form.addEventListener('submit', (event) => { event.preventDefault(); if (canContinue()) submitQuestion(); });
-  setActions({
-    back: true,
-    secondary: decision ? null : { label: 'Soru olmadan devam et', onClick: () => { state.inputs.question = ''; submitQuestion(); } },
-    primary: { label: 'Kartları karıştır', disabled: !canContinue(), onClick: () => { if (canContinue()) submitQuestion(); } }
-  });
-  refresh();
-};
-
-function submitQuestion() {
-  const { question, optionA, optionB, personName } = state.inputs;
-  if (ENGINE.isCrisis(question, optionA, optionB)) return showCrisis();
-  track('question_submitted', { spreadId: state.spreadId, hasQuestion: Boolean(question.trim()), length: question.trim().length });
-  return go('shuffle');
-}
+// Karar açılımındaki seçenekler açılım onayı ekranında toplanır.
 
 function showCrisis() {
   setHeading('Şu an yanındayız', 'Bu soru için okuma yapmıyoruz.');
@@ -1029,9 +996,9 @@ function startNewReading() {
 const HAND_MARK = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9.500 11.500V5a1.500 1.500 0 0 1 3 0v5m0-1a1.500 1.500 0 0 1 3 0v1.500m0-.5a1.500 1.500 0 0 1 3 0v4.500A6 6 0 0 1 12.500 21h-1a6 6 0 0 1-4.800-2.400L4 15a1.600 1.600 0 0 1 2.400-2L9.500 15" stroke="currentColor" stroke-width="1.200" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 const SHUFFLE_TEXT = {
-  idle: 'Sorunu düşünerek desteye basılı tut',
+  idle: 'Niyetine odaklanıp desteye basılı tut',
   idleReduced: 'Desteye dokun ya da otomatik karıştır',
-  start: 'Kartlar karışıyor… sorunu düşünmeye devam et',
+  start: 'Kartlar karışıyor… niyetine odaklan',
   half: 'Niyetin kartlara geçiyor…',
   ready: 'Hazır olunca bırak',
   early: 'Biraz daha karıştır. Yeniden basılı tut',
@@ -1043,8 +1010,7 @@ let shuffleRig = null;
 
 RENDERERS.shuffle = () => {
   const spread = currentSpread();
-  const question = state.inputs.question.trim();
-  const invite = spread.id === 'daily' ? 'Bugün için bir kart seçilecek.' : (question ? `“${question}”` : 'Bir nefes al. Sorunu düşün.');
+  const invite = spread.id === 'daily' ? 'Bugün için bir kart seçilecek.' : `${UI.spreadDisplayName(spread.name)} açılımına odaklan.`;
   setHeading(UI.spreadDisplayName(spread.name), `${spread.cardCount} kart · Yaklaşık ${spread.estMinutes} dakika`);
   setProgress('');
   body.innerHTML = `<div class="shuffle-step">
@@ -1915,14 +1881,14 @@ function morphLayout(container, spread, mode) {
 }
 
 // ---------- 8 · Yorum: kart kart anlatım ----------
-// Yorum kaydırılmaz: genel bakış, her kart, genel yorum ve not sırayla birer sahne olarak gelir.
+// Yorum kaydırılmaz: genel bakış, her kart, genel yorum ve bitiş sırayla birer sahne olarak gelir.
 // Anlatılan kart dizilimde öne çıkar; uzun metin cümle sınırından ekrana sığan sayfalara bölünür.
 
 const PREV_MARK = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m15 5-7 7 7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const NEXT_MARK = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const ZOOM_MARK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="6.500" stroke="currentColor" stroke-width="1.500"/><path d="m16 16 4.500 4.500M11 8.500v5M8.500 11h5" stroke="currentColor" stroke-width="1.500" stroke-linecap="round"/></svg>';
 
-const story = { chapters: [], at: { chapter: 0, page: 0 }, notes: null, seen: new Set(), resizeTimer: 0 };
+const story = { chapters: [], at: { chapter: 0, page: 0 }, finish: null, seen: new Set(), resizeTimer: 0 };
 
 RENDERERS.reading = async (options = {}) => {
   const token = state.renderToken;
@@ -1984,7 +1950,7 @@ function drawnList(reading, spread) {
     if (!drawn) return '';
     const card = TAROT.getCard(drawn.cardId);
     const badge = drawn.reversed ? ' <span class="badge-reversed">Ters</span>' : '';
-    return `<li><button type="button" class="drawn-row" data-goto="card:${esc(position.key)}" aria-label="${position.index}. ${esc(ENGINE.displayLabel(position, reading))}: ${esc(card.nameTr)}${drawn.reversed ? ', ters' : ''}. Bu kartın yorumuna git."><span class="drawn-num">${position.index}</span><span class="drawn-copy"><span class="drawn-name"><span class="drawn-card">${esc(card.nameTr)}</span>${badge}</span><span class="drawn-seat">${esc(ENGINE.displayLabel(position, reading))}${two ? badge : ''}</span></span></button></li>`;
+    return `<li><button type="button" class="drawn-row" data-goto="card:${esc(position.key)}" aria-label="${position.index}. ${esc(ENGINE.displayLabel(position, reading))} konumundaki kart: ${esc(card.nameTr)}${drawn.reversed ? ', ters' : ''}. Bu kartın yorumuna git."><span class="drawn-num">${position.index}</span><span class="drawn-copy"><span class="drawn-seat">${esc(ENGINE.displayLabel(position, reading))}${two ? badge : ''}</span><span class="drawn-name"><span class="drawn-link" aria-hidden="true">→</span><span class="drawn-card">${esc(card.nameTr)}</span>${badge}</span></span></button></li>`;
   }).join('');
   return `<ol class="drawn-list${two ? ' is-two' : ''}" aria-label="Çektiğin kartlar">${rows}</ol>`;
 }
@@ -2005,7 +1971,7 @@ function storyChapters(reading, spread, interpretation) {
   if (!daily) outline.splice(outline.findIndex((c) => c.kind === 'summary'), 0, { id: 'drawn', kind: 'drawn' });
   return outline.map((chapter) => {
     if (chapter.kind === 'drawn') {
-      return { ...chapter, label: 'Masadaki kartlar', head: `<p class="eyebrow">MASADAKİ KARTLAR</p>${drawnList(reading, spread)}`, blocks: [], empty: '' };
+      return { ...chapter, label: 'Masadaki kartlar', head: `<div class="drawn-heading"><p class="eyebrow">MASADAKİ KARTLAR</p><p class="drawn-hint">Yorumunu okumak için bir kart seç.</p></div>${drawnList(reading, spread)}`, blocks: [], empty: '' };
     }
     if (chapter.kind === 'summary') {
       return { ...chapter, label: daily ? 'Bugünün teması' : 'Genel bakış',
@@ -2017,23 +1983,23 @@ function storyChapters(reading, spread, interpretation) {
       const drawn = byKey[chapter.key];
       const card = TAROT.getCard(drawn.cardId);
       const keywords = ENGINE.keywordsOf(card, drawn.reversed, TAROT);
-      const seat = daily ? 'Günün kartı' : `${position.index} · ${ENGINE.displayLabel(position, reading)}`;
+      const positionName = ENGINE.displayLabel(position, reading);
+      const seat = daily ? 'Günün kartı' : `${position.index} · ${positionName}`;
       const said = told[chapter.key] || {};
       const note = NOTES.noteOf(card.id) || {};
       const meaning = [said.meaning || (drawn.reversed ? card.reversed : card.upright), said.area || ''].filter(Boolean).join(' ');
       const here = said.seat ? [said.seat, said.context, said.tie].filter(Boolean).join(' ') : (said.text || '');
-      const ask = drawn.reversed ? note.askReversed : note.ask;
-      const place = daily ? 'Bugün için' : `${ENGINE.displayLabel(position, reading)} yerinde`;
+      const place = daily ? 'Bugün için' : 'Bu konumda';
       return { ...chapter, label: daily ? card.nameTr : seat,
-        head: `<p class="eyebrow">${esc(seat)}</p>
-          <h3 class="story-title">${esc(card.nameTr)} <span class="card-tr">${esc(card.name)}</span>${drawn.reversed ? ' <span class="badge-reversed">Ters</span>' : ''}
-            <button type="button" class="card-zoom" data-card="${esc(card.id)}" data-reversed="${drawn.reversed}" data-key="${esc(chapter.key)}" aria-label="${esc(card.nameTr)} kartını büyüt">${ZOOM_MARK}</button></h3>
+        head: `<div class="story-card-head"><p class="eyebrow story-position">${daily ? 'GÜNÜN KARTI' : `${String(position.index).padStart(2, '0')} / ${String(spread.positions.length).padStart(2, '0')} · ${esc(positionName)}`}</p>
+          <div class="story-card-title-row"><h3 class="story-title"><span class="story-card-name">${esc(card.nameTr)}</span></h3>
+            <button type="button" class="card-zoom" data-card="${esc(card.id)}" data-reversed="${drawn.reversed}" data-key="${esc(chapter.key)}" aria-label="${esc(card.nameTr)} kartını büyüt">${ZOOM_MARK}</button></div>
+          <div class="story-meta"><span class="card-tr">${esc(card.name)}</span>${drawn.reversed ? ' <span class="badge-reversed">Ters</span>' : ''}</div></div>
           <ul class="chips" aria-label="Anahtar kelimeler">${keywords.map((k) => `<li>${esc(k)}</li>`).join('')}</ul>`,
         blocks: [
-          note.scene ? { cls: 'scene-text', label: 'Kartta', text: note.scene } : null,
-          { cls: 'meaning-text', label: drawn.reversed ? 'Ters gelişte anlamı' : 'Anlamı', text: meaning },
-          { cls: 'position-text', label: place, text: here },
-          ask ? { cls: 'ask-text', label: 'Kendine sor', text: ask } : null
+          note.scene ? { cls: 'scene-text', label: 'Kartın sahnesi', text: note.scene } : null,
+          { cls: 'meaning-text', label: drawn.reversed ? 'Ters anlamı' : 'Kartın anlamı', text: meaning },
+          { cls: 'position-text', label: place, text: here }
         ].filter(Boolean) };
     }
     if (chapter.kind === 'comparison') {
@@ -2057,20 +2023,19 @@ function storyChapters(reading, spread, interpretation) {
       return { ...chapter, label: 'Genel yorum', head: '<p class="eyebrow">GENEL YORUM</p>',
         blocks: [{ cls: 'closing-text', text: interpretation.closing || '' }], empty: 'Usta, kartların birlikte ne dediğine bakıyor.' };
     }
-    return { ...chapter, label: daily ? 'Bugünden bir not' : 'Notun', fixed: true };
+    return { ...chapter, label: 'Bitir', fixed: true };
   });
 }
 
-function notesPage(reading, spread) {
+function finishPage(spread) {
   const daily = spread.id === 'daily';
   const page = document.createElement('section');
-  page.className = 'story-page story-notes';
+  page.className = 'story-page story-finish';
   page.hidden = true;
   const reminder = daily ? `<label class="toggle-row"><span><strong>Her sabah hatırlat</strong><small>Saat ${esc(settings.reminderTime)} · Ayarlar'dan değiştirebilirsin.</small></span><input type="checkbox" role="switch" id="reminder-toggle"${settings.reminder ? ' checked' : ''}></label>` : '';
   const primaryAction = `<button type="button" class="btn btn-main" id="reading-new">${RENEW_MARK} ${daily ? 'Yeni kart çek' : 'Yeni okuma'}</button>`;
-  page.innerHTML = `<div class="story-inner">
-      <p class="saved-note">Okuman kaydedildi</p>
-      <div class="reading-notes"><label class="field"><span>${daily ? 'Bugünden bir not' : 'Not ekle'}</span><textarea id="note" rows="3" maxlength="2000" placeholder="${daily ? 'Aklında kalan bir cümle…' : 'Bu okuma sana ne düşündürdü?'}">${esc(reading.note || '')}</textarea><span class="counter" id="note-state" aria-live="polite">Okuma otomatik kaydedildi</span></label></div>
+  page.innerHTML = `<div class="story-inner finish-inner">
+      <div class="finish-copy"><span class="finish-mark" aria-hidden="true">✦</span><p class="eyebrow">SON BÖLÜM</p><h2 class="finish-title">Yorumun tamamlandı.</h2></div>
       ${reminder}
       <div class="reading-buttons">
         <button type="button" class="btn btn-outline" id="reading-share">${SHARE_MARK} Paylaş</button>
@@ -2087,13 +2052,13 @@ function buildStory(reading, spread, interpretation) {
   story.seen = new Set();
   const viewport = $('#story-viewport');
   viewport.replaceChildren();
-  story.notes = notesPage(reading, spread);
-  viewport.append(story.notes);
+  story.finish = finishPage(spread);
+  viewport.append(story.finish);
   $('#story').removeAttribute('aria-busy');
   paginateStory();
   $('#story-dots').innerHTML = story.chapters.map((c, i) => `<li><button type="button" class="story-dot" data-chapter="${i}" aria-label="${esc(c.label)}"></button></li>`).join('');
   bindStory();
-  bindReading(reading, spread);
+  bindReading();
   showStoryPage(0, 0, 1, { first: true });
 }
 
@@ -2177,7 +2142,7 @@ function showStoryPage(ci, pi, dir = 1, { first = false, quiet = false } = {}) {
   const old = $('.story-page.is-current:not(.story-measure)', viewport);
   let page;
   if (chapter.fixed) {
-    page = story.notes;
+    page = story.finish;
     page.hidden = false;
   } else {
     page = document.createElement('section');
@@ -2207,7 +2172,7 @@ function retireStoryPage(page, dir) {
   page.classList.remove('is-current');
   const done = () => {
     if (page.classList.contains('is-current')) return;
-    if (page === story.notes) page.hidden = true;
+    if (page === story.finish) page.hidden = true;
     else page.remove();
   };
   if (reduced()) { done(); return; }
@@ -2338,7 +2303,7 @@ function storyResize() {
     const { chapter, page } = story.at;
     paginateStory();
     const current = $('#story-viewport .story-page.is-current');
-    if (current && current !== story.notes) current.remove();
+    if (current && current !== story.finish) current.remove();
     if (current) current.classList.remove('is-current');
     showStoryPage(chapter, page, 1, { quiet: true });
   }, 160);
@@ -2423,12 +2388,20 @@ async function fillClosing(reading, spread, interpretation, token) {
     setClosingText(interpretation.closing, token);
     return;
   }
-  const draft = ORACLE.longClosing(reading, spread, TAROT);
+  const previous = await service.previousReadings(reading.id);
+  if (token !== state.renderToken) return;
+  const draft = ORACLE.longClosing(reading, spread, TAROT, previous);
   setClosingText(draft, token);
+  interpretation.closing = draft;
+  interpretation.closingSource = 'template';
+  interpretation.closingVoice = ORACLE.VOICE;
+  await service.saveClosing(reading.id, draft, 'template');
+  if (token !== state.renderToken) return;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 25000);
   try {
-    const text = await ORACLE.closing(reading, spread, TAROT, { signal: ctrl.signal });
+    const recentClosings = previous.slice(0, 10).map((item) => item.interpretation && item.interpretation.closing).filter(Boolean);
+    const text = await ORACLE.closing(reading, spread, TAROT, { signal: ctrl.signal, recentClosings });
     const longEnough = text && text.trim().split(/\s+/).length >= 180;
     if (token !== state.renderToken || !longEnough) throw new Error('short');
     interpretation.closing = text.trim();
@@ -2446,18 +2419,9 @@ async function fillClosing(reading, spread, interpretation, token) {
   }
 }
 
-function bindReading(reading, spread) {
+function bindReading() {
   $('#reading-share').addEventListener('click', shareReading);
   $('#reading-new').addEventListener('click', startNewReading);
-  let timer = 0;
-  $('#note').addEventListener('input', (event) => {
-    clearTimeout(timer);
-    $('#note-state').textContent = 'Kaydediliyor…';
-    timer = setTimeout(async () => {
-      await service.patch(reading.id, { note: event.target.value });
-      $('#note-state').textContent = 'Not kaydedildi';
-    }, 500);
-  });
   const reminder = $('#reminder-toggle');
   if (reminder) {
     reminder.addEventListener('change', () => {
@@ -2674,7 +2638,7 @@ async function storyImage(reading, spread, interpretation, withFaces) {
   ctx.fillRect(0, 0, W, H);
   // Masa sahnesi: hedef oranı dolduracak şekilde ortadan kırpılır.
   try {
-    const scene = await loadImage('assets/night/night-scene.png');
+    const scene = await loadImage('assets/night/night-scene.webp');
     const scale = Math.max(W / scene.width, H / scene.height);
     const sw = W / scale;
     const sh = H / scale;
@@ -2707,7 +2671,7 @@ async function storyImage(reading, spread, interpretation, withFaces) {
   const geo = geometry(spread, 900, 820, 'share', false);
   const byKey = Object.fromEntries(reading.cards.map((c) => [c.positionKey, c]));
   const faces = withFaces ? await Promise.all(spread.positions.map((p) => loadImage(TAROT.getCard(byKey[p.key].cardId).image))) : [];
-  const back = withFaces ? null : await loadImage('assets/night/card-back.png').catch(() => null);
+  const back = withFaces ? null : await loadImage('assets/night/card-back.webp').catch(() => null);
   geo.slots.forEach((s, i) => {
     const drawn = byKey[s.key];
     const card = TAROT.getCard(drawn.cardId);
@@ -2794,9 +2758,8 @@ function renderGuide({ deal = true, keep = false } = {}) {
   $('#guide-caption').style.visibility = cards.length ? '' : 'hidden';
   $('.guide-controls').style.visibility = cards.length ? '' : 'hidden';
   const host = $('#guide-deck');
-  host.innerHTML = cards.map((card, i) => `<button type="button" class="guide-card" data-card="${esc(card.id)}" data-i="${i}" tabindex="-1" aria-label="${esc(card.nameTr)}, ${esc(card.name)}. Penceresini aç."><span class="guide-art card-back"><img alt="" draggable="false" src="${esc(card.image)}"></span></button>`).join('');
+  host.innerHTML = cards.map((card, i) => `<button type="button" class="guide-card" data-card="${esc(card.id)}" data-i="${i}" tabindex="-1" aria-label="${esc(card.nameTr)}, ${esc(card.name)}. Penceresini aç."><span class="guide-art card-back"><img alt="" draggable="false" decoding="async" data-src="${esc(card.image)}"></span></button>`).join('');
   deck.buttons = $$('.guide-card', host);
-  $$('img', host).forEach(watchCardImage);
   const start = keepId ? Math.max(0, cards.findIndex((c) => c.id === keepId)) : 0;
   deck.pos = start;
   deck.target = start;
@@ -2841,6 +2804,11 @@ function paintDeck() {
     if (Math.abs(i - deck.pos) > visible + 1.5) {
       if (button.style.visibility !== 'hidden') button.style.visibility = 'hidden';
       return;
+    }
+    const img = button.querySelector('img');
+    if (img && !img.hasAttribute('src')) {
+      watchCardImage(img);
+      img.src = img.dataset.src;
     }
     const pose = UI.guideFanPose((i - deck.pos) * deck.spread, { cardWidth: deck.w, visible });
     button.style.visibility = pose.opacity > 0.01 ? '' : 'hidden';
