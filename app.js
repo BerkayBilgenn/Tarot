@@ -1997,9 +1997,9 @@ function storyChapters(reading, spread, interpretation) {
           <div class="story-meta"><span class="card-tr">${esc(card.name)}</span>${drawn.reversed ? ' <span class="badge-reversed">Ters</span>' : ''}</div></div>
           <ul class="chips" aria-label="Anahtar kelimeler">${keywords.map((k) => `<li>${esc(k)}</li>`).join('')}</ul>`,
         blocks: [
-          note.scene ? { cls: 'scene-text', label: 'Kartın resminde', text: note.scene } : null,
+          { cls: 'position-text', label: place, text: here },
           { cls: 'meaning-text', label: drawn.reversed ? 'Ters kartın anlamı' : 'Kartın temel anlamı', text: meaning },
-          { cls: 'position-text', label: place, text: here }
+          note.scene ? { cls: 'scene-text', label: 'Kartın resminde', text: note.scene } : null
         ].filter(Boolean) };
     }
     if (chapter.kind === 'comparison') {
