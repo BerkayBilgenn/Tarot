@@ -592,15 +592,14 @@ RENDERERS.intent = async (_options, from) => {
   const [draft, daily] = await Promise.all([service.draft(), service.dailyToday()]);
   if (token !== state.renderToken) return;
   if (draft || (daily && daily.status === 'complete')) {
-    const scroll = $('.intent-picker', body)?.scrollLeft || 0;
     body.classList.add('no-enter');
     body.innerHTML = intentMarkup(draft, daily);
-    bindIntent(scroll);
+    bindIntent();
   }
 };
 
 // Masaüstünde kartlar imleci izler. Telefonda kartlar yatay bir karuselde durur; ortaya oturan kart seçilir.
-function bindIntent(scroll = null) {
+function bindIntent() {
   const picker = $('.intent-picker', body);
   if (!picker) return;
   MOTION.bindTilt(picker, '.intent-art');
@@ -637,10 +636,7 @@ function bindIntent(scroll = null) {
   });
   picker.paint = paint;
   fitIntentCards(picker);
-  if (isMobile()) {
-    if (scroll !== null) picker.scrollLeft = scroll;
-    else centerIntent($('input:checked', picker)?.closest('.intent-choice'), false);
-  }
+  if (isMobile()) centerIntent($('input:checked', picker)?.closest('.intent-choice'), false);
   paint();
 }
 
