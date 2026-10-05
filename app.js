@@ -580,7 +580,8 @@ dialogs.leave.addEventListener('close', async () => {
 
 // ---------- 1 · Niyet ----------
 
-RENDERERS.intent = async () => {
+RENDERERS.intent = async (_options, from) => {
+  if (from === 'confirm' && state.intentId) selectedIntentId = state.intentId;
   const token = state.renderToken;
   resetReading();
   setHeading('Biraz da kendini dinle.', 'Bir nefes al. Bugün kendine biraz daha yaklaş.');
@@ -621,7 +622,7 @@ function bindIntent(scroll = null) {
     if (!raf) raf = requestAnimationFrame(paint);
     clearTimeout(settle);
     settle = setTimeout(() => {
-      if (!isMobile()) return;
+      if (!isMobile() || state.step !== 'intent' || picker !== $('.intent-picker', body)) return;
       const nearest = choices.reduce((best, c) => (Math.abs(centerOf(c) - middle()) < Math.abs(centerOf(best) - middle()) ? c : best));
       const input = $('input', nearest);
       if (!input.checked) {
@@ -1991,7 +1992,7 @@ function storyChapters(reading, spread, interpretation) {
       const here = said.seat ? [said.seat, said.context, said.tie].filter(Boolean).join(' ') : (said.text || '');
       const place = daily ? 'Bugünkü yorumun' : `Bu açılımdaki yorum · ${positionName}`;
       return { ...chapter, label: daily ? card.nameTr : seat,
-        head: `<div class="story-card-head"><p class="eyebrow story-position">${daily ? 'GÜNÜN KARTI' : `${String(position.index).padStart(2, '0')} / ${String(spread.positions.length).padStart(2, '0')} · ${esc(positionName)}`}</p>
+        head: `<div class="story-card-head">${daily ? '' : `<p class="eyebrow story-position">${String(position.index).padStart(2, '0')} / ${String(spread.positions.length).padStart(2, '0')} · ${esc(positionName)}</p>`}
           <div class="story-card-title-row"><h3 class="story-title"><span class="story-card-name">${esc(card.nameTr)}</span></h3>
             <button type="button" class="card-zoom" data-card="${esc(card.id)}" data-reversed="${drawn.reversed}" data-key="${esc(chapter.key)}" aria-label="${esc(card.nameTr)} kartını büyüt">${ZOOM_MARK}</button></div>
           <div class="story-meta"><span class="card-tr">${esc(card.name)}</span>${drawn.reversed ? ' <span class="badge-reversed">Ters</span>' : ''}</div></div>
@@ -3287,8 +3288,12 @@ function resizeLayout() {
   if (state.step === 'intent') {
     const picker = $('.intent-picker', body);
     if (picker && picker.paint) {
+      const priorCardWidth = $('.intent-choice', picker)?.offsetWidth;
+      const priorPickerWidth = picker.clientWidth;
       fitIntentCards(picker);
-      if (mobile && !lastMobile) centerIntent($('input:checked', picker)?.closest('.intent-choice'), false);
+      if (mobile && (mobile !== lastMobile || priorCardWidth !== $('.intent-choice', picker)?.offsetWidth || priorPickerWidth !== picker.clientWidth)) {
+        centerIntent($('input:checked', picker)?.closest('.intent-choice'), false);
+      }
       picker.paint();
     }
   }
