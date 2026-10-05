@@ -1010,7 +1010,7 @@ let shuffleRig = null;
 
 RENDERERS.shuffle = () => {
   const spread = currentSpread();
-  const invite = spread.id === 'daily' ? 'Bugün için bir kart seçilecek.' : `${UI.spreadDisplayName(spread.name)} açılımına odaklan.`;
+  const invite = UI.shuffleInvite(spread.id);
   setHeading(UI.spreadDisplayName(spread.name), `${spread.cardCount} kart · Yaklaşık ${spread.estMinutes} dakika`);
   setProgress('');
   body.innerHTML = `<div class="shuffle-step">

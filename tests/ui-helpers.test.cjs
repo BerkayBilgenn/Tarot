@@ -1,12 +1,21 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { spreadDisplayName, matchesHistoryQuery, fanLayout } = require('../ui-helpers.js');
+const { spreadDisplayName, shuffleInvite, matchesHistoryQuery, fanLayout } = require('../ui-helpers.js');
 
 test('spreadDisplayName parantez içindeki alt adı ortada noktayla ayırır', () => {
   assert.equal(spreadDisplayName('Karar (İki yol)'), 'Karar · İki yol');
   assert.equal(spreadDisplayName('Üç kart'), 'Üç kart');
   assert.equal(spreadDisplayName(''), '');
+});
+
+test('karıştırma daveti açılım adı yerine düşünülecek konuyu söyler', () => {
+  assert.equal(shuffleInvite?.('career'), 'İş ve para konularında aklındaki durumu düşün.');
+  assert.equal(shuffleInvite?.('relationship'), 'İlişkindeki durumu düşün.');
+  assert.equal(shuffleInvite?.('decision'), 'Karşındaki iki seçeneği düşün.');
+  assert.equal(shuffleInvite?.('three'), 'Şu an aklındaki durumu düşün.');
+  assert.equal(shuffleInvite?.('celtic'), 'Seni meşgul eden konuyu düşün.');
+  assert.equal(shuffleInvite?.('daily'), 'Bugün için bir kart seçilecek.');
 });
 
 test('matchesHistoryQuery Türkçe büyük/küçük harf kuralıyla soru, açılım ve kart adında arar', () => {

@@ -9,6 +9,19 @@
     return String(name || '').replace(/\s*\(([^)]+)\)/, ' · $1');
   }
 
+  // Karıştırırken açılımın adını değil, kişinin aklında tutacağı konuyu söyler.
+  function shuffleInvite(spreadId) {
+    const invites = {
+      daily: 'Bugün için bir kart seçilecek.',
+      three: 'Şu an aklındaki durumu düşün.',
+      relationship: 'İlişkindeki durumu düşün.',
+      decision: 'Karşındaki iki seçeneği düşün.',
+      career: 'İş ve para konularında aklındaki durumu düşün.',
+      celtic: 'Seni meşgul eden konuyu düşün.'
+    };
+    return invites[spreadId] || 'Aklındaki durumu düşün.';
+  }
+
   const fold = (text) => String(text || '').toLocaleLowerCase('tr-TR');
 
   // Okumalarım araması: soru, açılım adı ve kart adlarında Türkçe harf kuralıyla arar.
@@ -276,7 +289,7 @@
   }
 
   const api = {
-    spreadDisplayName, matchesHistoryQuery, fanLayout, splitSentences, paginateBlocks, paginateText, pageWindow,
+    spreadDisplayName, shuffleInvite, matchesHistoryQuery, fanLayout, splitSentences, paginateBlocks, paginateText, pageWindow,
     fitCount, guideFanPose, snapTarget, wordStep, storyOutline, coverPoint, labelSides, sideLabelLayout,
     stackCardWidth, stripLayout
   };
