@@ -207,6 +207,8 @@ const badgeSize = () => (window.innerWidth <= 400 ? 18 : 26);
 // Etiket payı kalkınca kartlar büyür.
 function badged(spread, mode) {
   if (spread.id === 'celtic') return ['preview', 'reveal', 'reading'].includes(mode);
+  // Seçenek adları uzayabilir; onayda numaralar haritadaki tam adlara bağlanır.
+  if (spread.id === 'decision' && mode === 'preview') return true;
   if (spread.id === 'relationship' && mode === 'reveal') return true;
   // Telefonda yorumda kartın altında etiket yoktur; numara rozeti kartı listedeki ve anlatımdaki yerine bağlar.
   if (mode === 'reading' && isMobile()) return spread.cardCount > 1;
@@ -926,6 +928,7 @@ function bindSpreadMap() {
 function setDepth(spreadId) {
   if (spreadId === state.spreadId) return;
   state.spreadId = spreadId;
+  stage.dataset.spread = spreadId;
   const spread = currentSpread();
   $$('[data-depth]').forEach((b) => {
     const on = b.dataset.depth === spreadId;
@@ -2578,9 +2581,9 @@ async function shareReading() {
   try { blob = await storyImage(reading, spread, interpretation, true); } catch (error) { blob = null; }
   if (!blob) blob = await storyImage(reading, spread, interpretation, false);
   track('reading_shared', { spreadId: spread.id });
-  const file = new File([blob], `kendine-don-${spread.id}.png`, { type: 'image/png' });
+  const file = new File([blob], `miloruna-${spread.id}.png`, { type: 'image/png' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: `kendine dön · ${spread.name}` }); return; } catch (error) { if (error.name === 'AbortError') return; }
+    try { await navigator.share({ files: [file], title: `Miloruna · ${spread.name}` }); return; } catch (error) { if (error.name === 'AbortError') return; }
   }
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -2654,7 +2657,7 @@ async function storyImage(reading, spread, interpretation, withFaces) {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#f4ebdd';
   ctx.font = `400 72px ${DISPLAY}`;
-  ctx.fillText('kendine dön', 540, 170);
+  ctx.fillText('Miloruna', 540, 170);
   ctx.fillStyle = '#d8b782';
   ctx.font = `400 22px ${UI_FONT}`;
   ctx.fillText('İÇİNDE KALANLARA BİR YER', 540, 214);

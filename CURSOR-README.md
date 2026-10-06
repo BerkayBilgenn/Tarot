@@ -1,4 +1,4 @@
-# Kendine Dön — tarot web arayüzü
+# Miloruna — tarot web arayüzü
 
 Bu klasörü Cursor'da proje olarak açın. `index.html` başlangıç dosyasıdır; derleme veya paket kurulumu gerekmez. Görsellerin yolları görecelidir, bu yüzden dosyaları birlikte tutun.
 
