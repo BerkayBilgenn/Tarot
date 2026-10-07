@@ -46,7 +46,7 @@
       ],
     },
     {
-      id: 'career', name: 'Kariyer & para', cardCount: 5, estMinutes: 4, intents: ['work'],
+      id: 'career', name: 'İş / Para', cardCount: 5, estMinutes: 4, intents: ['work'],
       blurb: 'İşine, yönüne ve içindeki güce yeni bir yerden bak.',
       inputs: { question: 'optional' },
       positions: [

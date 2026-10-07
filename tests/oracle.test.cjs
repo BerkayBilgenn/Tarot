@@ -22,15 +22,15 @@ test('the closing brief carries the question, the seats and the bans', () => {
   assert.match(text, /Ölüm/);
   assert.match(text, /Kalmak/);
   assert.match(text, /Gitmek/);
-  assert.match(text, /seçmesi gerektiğini söyleme/);
+  assert.match(oracle.SYSTEM, /kullanıcı yerine seçim yapma/);
   assert.match(oracle.SYSTEM, /fiziksel ölüm değildir/);
-  assert.match(oracle.SYSTEM, /hangi yolu seçmesi/);
+  assert.match(oracle.SYSTEM, /A\/B yollarının/);
   const essay = oracle.longClosing(reading, spread, cards);
   const essayWords = essay.trim().split(/\s+/).length;
   assert.ok(essayWords >= 180, `closing is ${essayWords} words`);
   assert.match(essay, /Hangisi bana daha çok benziyor/);
   assert.match(essay, /hangisini seçmen gerektiğini söylemez/);
-  assert.equal(oracle.MODEL, 'deepseek-ai/deepseek-v4.1-flash');
+  assert.equal(oracle.MODEL, 'qwen3.8-flash');
 });
 
 test('the template closing tells the spread as a story and ends with the cards\' questions', () => {
@@ -181,61 +181,10 @@ test('a local multi-card closing changes when its first draft resembles recent t
   assert.match(changed, /İmparatoriçe/);
 });
 
-test('a repeated model closing is retried with a new focus', async () => {
-  const spread = spreads.getSpread('three');
-  const reading = {
-    id: 'new-reading', spreadId: 'three', question: 'Neye dikkat etmeliyim?',
-    cards: spread.positions.map((position, i) => ({ positionKey: position.key, cardId: cards.CARDS[i + 3].id, reversed: false })),
-  };
-  const repeated = 'Kartlar burada sana önce durup bakmanı söylüyor. Geçmişin izi bugünkü seçimine karışıyor. Bu durum kendi hızını bulmanı istiyor. Somut bir adım için önce düşüncelerini yazabilirsin.';
-  const nearRepeat = repeated.replace('Somut bir adım', 'Küçük bir adım');
-  const fresh = 'İmparatoriçe ile büyütmek istediğin şey görünür oluyor. Aziz bu isteğe alıştığın kuralları getirirken Âşıklar hangi değeri seçeceğini soruyor. Bu üç kart arasında önce kendi önceliğini belirleyebilirsin.';
-  const requests = [];
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (_url, options) => {
-    requests.push(JSON.parse(options.body).attempt);
-    return new Response(JSON.stringify({ delta: requests.length === 1 ? nearRepeat : fresh }) + '\n');
-  };
-  try {
-    const result = await oracle.closing(reading, spread, cards, { recentClosings: [repeated] });
-    assert.equal(result, fresh);
-    assert.equal(requests.length, 2);
-    assert.notEqual(requests[0], requests[1]);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test('a long model paraphrase with the same content words is retried', async () => {
-  const spread = spreads.getSpread('daily');
-  const reading = { id: 'paraphrase', spreadId: 'daily', cards: [{ positionKey: 'today', cardId: 'major-03', reversed: false }] };
-  const themes = 'sabır büyüme yaratım bakım emek dinlenme ilişki sınır seçim duygu fırsat farkındalık değişim konuşma ihtiyaç beklenti eylem düşünce denge destek güven zaman deneyim adım';
-  const previous = Array(9).fill(themes).join(' ');
-  const paraphrase = Array(9).fill(themes.split(' ').reverse().join(' ')).join(' ');
-  const fresh = Array(9).fill('orman deniz bulut yıldız yol kitap ışık ağaç rüzgâr bahçe çiçek dalga nehir dağ ova kuş sabah akşam sonbahar yaz kış gölge güneş gökyüzü').join(' ');
-  let calls = 0;
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => { calls++; return new Response(JSON.stringify({ delta: calls === 1 ? paraphrase : fresh }) + '\n'); };
-  try {
-    const result = await oracle.closing(reading, spread, cards, { recentClosings: [previous] });
-    assert.equal(result, fresh);
-    assert.equal(calls, 2);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test('a model closing that repeats twice is rejected for the local fallback', async () => {
-  const spread = spreads.getSpread('daily');
-  const reading = { id: 'repeat', spreadId: 'daily', cards: [{ positionKey: 'today', cardId: 'major-03', reversed: false }] };
-  const repeated = 'Bu kart bugün yeniden karşına çıktı. Aynı konuya farklı bir yerden bakmayı deneyebilirsin. Önce elindeki bilgiyi yaz, sonra atabileceğin küçük adımı düşün.';
-  let calls = 0;
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => { calls++; return new Response(JSON.stringify({ delta: repeated }) + '\n'); };
-  try {
-    await assert.rejects(oracle.closing(reading, spread, cards, { recentClosings: [repeated] }), { code: 'repeated' });
-    assert.equal(calls, 2);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+test('similar model prose is returned once without a paid rewrite', async () => {
+  const spread=spreads.getSpread('daily'),reading={id:'once',spreadId:'daily',cards:[{positionKey:'today',cardId:'major-03',reversed:false}]};
+  const original=global.fetch;let calls=0;
+  const result=require('./helpers/oracle-fixtures.cjs').resultFor(['today']);
+  global.fetch=async(_url,options)=>{const body=JSON.parse(options.body);if(body.mode==='session')return new Response('{"status":"session"}');calls++;return new Response(JSON.stringify({status:'ready',result}));};
+  try{assert.equal(await oracle.closing(reading,spread,cards,{recentClosings:[result.general]}),result.general);assert.equal(calls,1);}finally{global.fetch=original;}
 });

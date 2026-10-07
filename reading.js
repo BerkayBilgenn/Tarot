@@ -297,6 +297,16 @@
       return wait(undefined);
     }
 
+    function holisticResult(value, spread) {
+      const oracle=root.TAROT_ORACLE || (typeof require==='function'?require('./oracle.js'):null);
+      return oracle?.validateResult(value,spread.positions.map(p=>p.key)) || null;
+    }
+    function oracleState(value) {
+      if(!value || !['pending','ready','local','unknown','failed'].includes(value.status))return null;
+      if(value.ticket!==undefined && (typeof value.ticket!=='string'||value.ticket.length>2048))return null;
+      if(value.reason!==undefined && (typeof value.reason!=='string'||value.reason.length>80))return null;
+      return {status:value.status,...(value.ticket?{ticket:value.ticket}:{}),...(value.reason?{reason:value.reason}:{})};
+    }
     function validInterpretation(value, spread) {
       if (!value || typeof value.summary !== 'string' || !Array.isArray(value.positions) || value.positions.length !== spread.cardCount) return false;
       if (['summaryMore', 'closing', 'closingSource', 'closingVoice'].some(key => value[key] !== undefined && typeof value[key] !== 'string')) return false;
@@ -305,6 +315,8 @@
       if (value.comparison !== undefined && (!value.comparison || !['a','b','note'].every(key => typeof value.comparison[key] === 'string'))) return false;
       if (value.pairs !== undefined && (!Array.isArray(value.pairs) || !value.pairs.every(pair => pair && typeof pair.text === 'string' &&
         Array.isArray(pair.keys) && pair.keys.length === 2 && pair.keys.every(key => spread.positions.some(p => p.key === key))))) return false;
+      if(value.holistic!==undefined && !holisticResult(value.holistic,spread))return false;
+      if(value.oracleState!==undefined && !oracleState(value.oracleState))return false;
       return true;
     }
 
@@ -317,6 +329,9 @@
       if (!validInterpretation(old, spread) || old.textVersion !== TEXT_VERSION) {
         const fresh = interpret(reading, spread, cards, priorReadings(list, reading));
         if (old && old.closingSource === 'llm' && typeof old.closing === 'string' && old.closing) Object.assign(fresh, { closing: old.closing, closingSource: 'llm', closingVoice: typeof old.closingVoice === 'string' ? old.closingVoice : undefined });
+        const holistic=old && holisticResult(old.holistic,spread), savedState=old && oracleState(old.oracleState);
+        if(holistic)Object.assign(fresh,{holistic,closing:holistic.general,closingSource:'llm'});
+        if(savedState)fresh.oracleState=savedState;
         reading.interpretation = fresh;
         save(list);
       }
@@ -393,6 +408,21 @@
       return wait(reading.interpretation);
     }
 
+    async function saveHolistic(readingId,result,options={}) {
+      const list=load(),reading=find(list,readingId),spread=spreads.getSpread(reading.spreadId);
+      const normalized=holisticResult(result,spread);
+      if(!normalized || options.source!=='llm' || !reading.interpretation)throw new Error('Geçersiz yorum');
+      const savedState=oracleState({status:'ready',...(options.ticket?{ticket:options.ticket}:{})});
+      if(!savedState)throw new Error('Geçersiz yorum kaydı');
+      Object.assign(reading.interpretation,{holistic:normalized,closing:normalized.general,closingSource:'llm',oracleState:savedState});
+      save(list);return wait(reading.interpretation);
+    }
+    async function saveOracleState(readingId,value) {
+      const list=load(),reading=find(list,readingId),normalized=oracleState(value);
+      if(!normalized || !reading.interpretation)throw new Error('Geçersiz yorum kaydı');
+      reading.interpretation.oracleState=normalized;save(list);return wait(reading.interpretation);
+    }
+
     // Aynı açılım ve benzer soru 24 saat içinde sorulduysa yumuşak uyarı için.
     function recentSimilar(spreadId, question) {
       const t = now().getTime();
@@ -403,7 +433,7 @@
       const hasBackup = storage.getItem(KEY + '.recovery') !== null;
       return { ...health, recovered: health.recovered || hasBackup, backupSaved: health.recovered ? health.backupSaved : hasBackup };
     }
-    return { createReading, pick, reveal, complete, markViewed, abandon, get, dailyToday, draft, list: listReadings, previousReadings, patch, saveClosing, recentSimilar, publicReading, userId,
+    return { createReading, pick, reveal, complete, markViewed, abandon, get, dailyToday, draft, list: listReadings, previousReadings, patch, saveClosing, saveHolistic, saveOracleState, recentSimilar, publicReading, userId,
       storageStatus, recoveryBackup: () => recoveryRaw ?? storage.getItem(KEY + '.recovery') };
   }
 

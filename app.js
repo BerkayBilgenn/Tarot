@@ -109,10 +109,15 @@ function readingErrorMessage(error) {
 
 // Soru, seçenek ve kişi adı metinleri hiçbir event'e girmez.
 const analytics = (window.__tarotEvents = []);
+const measuredCompletions = new Set();
 function track(name, props = {}) {
   const event = { name, props, at: new Date().toISOString() };
   analytics.push(event);
   document.dispatchEvent(new CustomEvent('tarot:analytics', { detail: event }));
+  const safe = window.TAROT_DISCOVERY?.analyticsEvent(name, props);
+  if (safe && typeof window.gtag === 'function') {
+    try { window.gtag('event', safe.name, safe.params); } catch (error) { /* Analytics must not interrupt a reading. */ }
+  }
 }
 
 // ---------- Haptic ve ses ----------
@@ -1000,13 +1005,17 @@ function showCrisis() {
 function ensureReading() {
   if (!state.readingPromise) {
     const forceNew = state.forceNew;
+    const spreadId = state.spreadId;
     state.readingPromise = service.createReading({
       spreadId: state.spreadId,
       ...state.inputs,
       reversalsEnabled: settings.reversals,
       forceNew
     }).then((result) => {
-      if (!result.existing) state.forceNew = false;
+      if (!result.existing) {
+        state.forceNew = false;
+        track('reading_start', { spreadId });
+      }
       return result;
     });
   }
@@ -1583,7 +1592,7 @@ function mountLegend(layout, spread) {
       if (!li) return;
       const pick = state.picks.find((p) => p.positionKey === li.dataset.key);
       if (!state.revealed.has(li.dataset.key)) revealCard(li.dataset.key, 'legend');
-      else if (pick && pick.card) openCardDetail(pick.card.id, pick.reversed, $('.face-front img', slotEl(li.dataset.key)));
+      else if (pick && pick.card) { if(state.step==='reading')openReadingCard(li.dataset.key,$('.face-front img',slotEl(li.dataset.key)));else openCardDetail(pick.card.id,pick.reversed,$('.face-front img',slotEl(li.dataset.key))); }
     });
     legend.addEventListener('pointerover', (event) => { const li = event.target.closest('li[data-key]'); if (li) hintPosition(li.dataset.key); });
     legend.addEventListener('pointerleave', () => hintPosition(null));
@@ -1914,17 +1923,13 @@ function updateSlotLabel(slot, position, mode) {
       button.removeAttribute('aria-hidden');
       button.tabIndex = 0;
       const revealed = pick && state.revealed.has(position.key) && pick.card;
-      const action = mode === 'reading' ? 'Yorumuna geç; yeniden dokununca kartı büyüt.' : 'Kart detayını aç.';
+      const action = mode === 'reading' ? 'Kartın açılımdaki yorumunu incele.' : 'Kart detayını aç.';
       button.setAttribute('aria-label', revealed
         ? `${position.index}. ${label}: ${pick.card.name}${pick.reversed ? ', ters' : ''}. ${action}`
         : `${position.index}. ${label}: yüzü kapalı. Açmak için dokun.`);
       button.onclick = () => {
         if (!state.revealed.has(position.key)) { revealCard(position.key, 'tap'); return; }
-        const told = story.chapters[story.at.chapter];
-        if (mode === 'reading' && state.step === 'reading' && story.chapters.length && (!told || told.key !== position.key)) {
-          goToChapter(`card:${position.key}`);
-          return;
-        }
+        if(mode==='reading'&&state.step==='reading'){openReadingCard(position.key,$('.face-front img',slot));return;}
         openCardDetail(pick.card.id, pick.reversed, $('.face-front img', slot));
       };
     }
@@ -1985,6 +1990,8 @@ RENDERERS.reading = async (options = {}) => {
   body.innerHTML = `<div class="reading-step"><div class="reading-grid">
       <div class="reading-visual"><div class="layout-stage reading-stage" id="layout"></div></div>
       <section class="story" id="story" aria-label="Yorum" aria-busy="true">
+        <div class="reading-card-strip" id="reading-card-strip" role="group" aria-label="Kart ayrıntıları"></div>
+        <p class="oracle-status" id="oracle-status" role="status" aria-live="polite"></p>
         <div class="story-viewport" id="story-viewport">
           <div class="story-page is-current" aria-hidden="true"><div class="story-inner"><div class="skeleton summary-skeleton"></div>${'<div class="skeleton row-skeleton"></div>'.repeat(Math.min(2, spread.cardCount))}</div></div>
         </div>
@@ -2024,6 +2031,10 @@ RENDERERS.reading = async (options = {}) => {
   updateStorageNotice();
   if (!state.viewOnly) {
     track('reading_viewed', { spreadId: spread.id, msFromStart: Math.round(performance.now() - (state.startedAt || performance.now())), interpretationSource: interpretation.source });
+    if (!measuredCompletions.has(viewed.id)) {
+      measuredCompletions.add(viewed.id);
+      track('reading_complete', { spreadId: spread.id });
+    }
   }
   buildStory(viewed, spread, interpretation);
   fillClosing(viewed, spread, interpretation, token).catch(error => {
@@ -2056,75 +2067,9 @@ function drawnList(reading, spread) {
 
 // Anlatımın bölümleri: başlık (yalnızca ilk sayfada) ve sayfalara bölünebilen metin blokları.
 function storyChapters(reading, spread, interpretation) {
-  const daily = spread.id === 'daily';
-  const byKey = Object.fromEntries(reading.cards.map((c) => [c.positionKey, c]));
-  const told = Object.fromEntries(interpretation.positions.map((p) => [p.positionKey, p]));
-  const positions = Object.fromEntries(spread.positions.map((p) => [p.key, p]));
-  const outline = UI.storyOutline({
-    spreadId: spread.id,
-    positionKeys: spread.positions.map((p) => p.key),
-    hasComparison: Boolean(interpretation.comparison),
-    hasPairs: Boolean(interpretation.pairs && interpretation.pairs.length)
-  });
-  // Birden çok kartlı açılımda anlatım, masadaki kartların listesiyle açılır: ne çektiğini önce bir bakışta gör.
-  if (!daily) outline.splice(outline.findIndex((c) => c.kind === 'summary'), 0, { id: 'drawn', kind: 'drawn' });
-  return outline.map((chapter) => {
-    if (chapter.kind === 'drawn') {
-      return { ...chapter, label: 'Masadaki kartlar', head: `<div class="drawn-heading"><p class="eyebrow">MASADAKİ KARTLAR</p><p class="drawn-hint">Yorumunu okumak için bir kart seç.</p></div>${drawnList(reading, spread)}`, blocks: [], empty: '' };
-    }
-    if (chapter.kind === 'summary') {
-      return { ...chapter, label: daily ? 'Bugünün teması' : 'Genel bakış',
-        head: `<p class="eyebrow">${daily ? 'BUGÜNÜN TEMASI' : 'GENEL BAKIŞ'}</p>`,
-        blocks: [{ cls: 'summary-text', text: interpretation.summary || '' }, { cls: 'summary-more', text: interpretation.summaryMore || '' }] };
-    }
-    if (chapter.kind === 'card') {
-      const position = positions[chapter.key];
-      const drawn = byKey[chapter.key];
-      const card = TAROT.getCard(drawn.cardId);
-      const keywords = ENGINE.keywordsOf(card, drawn.reversed, TAROT);
-      const positionName = ENGINE.displayLabel(position, reading);
-      const seat = daily ? 'Günün kartı' : `${position.index} · ${positionName}`;
-      const said = told[chapter.key] || {};
-      const note = NOTES.noteOf(card.id) || {};
-      const meaning = [said.meaning || (drawn.reversed ? card.reversed : card.upright), said.area || ''].filter(Boolean).join(' ');
-      const here = said.seat ? [said.seat, said.context, said.tie].filter(Boolean).join(' ') : (said.text || '');
-      const place = daily ? 'Bugünkü yorumun' : `Bu açılımdaki yorum · ${positionName}`;
-      return { ...chapter, label: daily ? card.nameTr : seat,
-        head: `<div class="story-card-head">${daily ? '' : `<p class="eyebrow story-position">${String(position.index).padStart(2, '0')} / ${String(spread.positions.length).padStart(2, '0')} · ${esc(positionName)}</p>`}
-          <div class="story-card-title-row"><h3 class="story-title"><span class="story-card-name">${esc(card.nameTr)}</span></h3>
-            <button type="button" class="card-zoom" data-card="${esc(card.id)}" data-reversed="${drawn.reversed}" data-key="${esc(chapter.key)}" aria-label="${esc(card.nameTr)} kartını büyüt">${ZOOM_MARK}</button></div>
-          <div class="story-meta"><span class="card-tr">${esc(card.name)}</span>${drawn.reversed ? ' <span class="badge-reversed">Ters</span>' : ''}</div></div>
-          <ul class="chips" aria-label="Anahtar kelimeler">${keywords.map((k) => `<li>${esc(k)}</li>`).join('')}</ul>`,
-        blocks: [
-          { cls: 'position-text', label: place, text: here },
-          { cls: 'meaning-text', label: drawn.reversed ? 'Ters kartın anlamı' : 'Kartın temel anlamı', text: meaning },
-          note.scene ? { cls: 'scene-text', label: 'Kartın resminde', text: note.scene } : null
-        ].filter(Boolean) };
-    }
-    if (chapter.kind === 'comparison') {
-      const cmp = interpretation.comparison;
-      return { ...chapter, label: 'İki yol',
-        head: '<p class="eyebrow">İKİ YOL</p><h3 class="story-title">A ve B karşılaştırması</h3>',
-        blocks: [
-          { cls: 'compare-text', title: reading.optionA || 'A', text: cmp.a || '' },
-          { cls: 'compare-text', title: reading.optionB || 'B', text: cmp.b || '' },
-          { cls: 'compare-note', text: cmp.note || '' }
-        ] };
-    }
-    if (chapter.kind === 'pairs') {
-      return { ...chapter, label: 'Pozisyon çiftleri', head: '<p class="eyebrow">POZİSYON ÇİFTLERİ</p>',
-        blocks: interpretation.pairs.map((pair) => {
-          const [a, b] = pair.keys.map((key) => positions[key]);
-          return { cls: 'pair-text', title: `${a.index}–${b.index} · ${a.label} ve ${b.label}`, text: pair.text || '' };
-        }) };
-    }
-    if (chapter.kind === 'closing') {
-      return { ...chapter, label: 'Genel yorum', head: '<p class="eyebrow">GENEL YORUM</p>',
-        blocks: [{ cls: 'closing-text', text: interpretation.closing || '' }], empty: 'Usta, kartların birlikte ne dediğine bakıyor.' };
-    }
-    return { ...chapter, label: 'Bitir', fixed: true };
-  });
+ return UI.storyOutline().map(chapter=>chapter.kind==='closing'?{...chapter,label:'Genel yorum',head:'<p class="eyebrow">GENEL YORUM</p>',blocks:[{cls:'closing-text',text:UI.generalText(interpretation,interpretation.closing||'')}],empty:'Kartların birlikte anlattığı yorum hazırlanıyor.'}:{...chapter,label:'Bitir',fixed:true});
 }
+
 
 function finishPage(spread) {
   const daily = spread.id === 'daily';
@@ -2146,8 +2091,30 @@ function finishPage(spread) {
   return page;
 }
 
+function renderReadingCardStrip(reading,spread) {
+ const strip=$('#reading-card-strip');if(!strip)return;
+ strip.replaceChildren(...spread.positions.map(position=>{
+  const drawn=reading.cards.find(c=>c.positionKey===position.key),card=TAROT.getCard(drawn.cardId),button=document.createElement('button');
+  button.type='button';button.className='reading-card-button';
+  const label=ENGINE.displayLabel(position,reading);
+  button.setAttribute('aria-label',`${card.nameTr} · ${label} · ${drawn.reversed?'Ters':'Düz'} · Kart ayrıntısını aç`);
+  const img=document.createElement('img');img.src=card.image;img.alt='';if(drawn.reversed)img.className='is-reversed';
+  const copy=document.createElement('span'),name=document.createElement('strong'),seat=document.createElement('small');name.textContent=card.nameTr;seat.textContent=label+(drawn.reversed?' · Ters':'');copy.append(name,seat);button.append(img,copy);
+  button.onclick=()=>openReadingCard(position.key,img);return button;
+ }));
+}
+async function openReadingCard(positionKey,fromImg) {
+ const reading=state.reading,spread=currentSpread(),id=reading?.id;
+ if(!id)return;
+ const interpretation=await state.interpretationPromise;if(state.reading?.id!==id)return;
+ const drawn=reading.cards.find(c=>c.positionKey===positionKey),detail=UI.cardReadingDetail({reading,spread,interpretation,positionKey});
+ if(!drawn||!detail)return;
+ openCardDetail(drawn.cardId,drawn.reversed,fromImg,null,{...detail,readingId:id,positionKey});
+}
+
 function buildStory(reading, spread, interpretation) {
   story.chapters = storyChapters(reading, spread, interpretation);
+  renderReadingCardStrip(reading,spread);
   story.seen = new Set();
   const viewport = $('#story-viewport');
   viewport.replaceChildren();
@@ -2443,7 +2410,7 @@ function bindSwipe(el, onStep) {
   el.dataset.swipe = 'true';
   let start = null;
   el.addEventListener('pointerdown', (event) => {
-    if (event.pointerType === 'mouse' || event.target.closest('textarea, input, select')) return;
+    if (event.pointerType === 'mouse' || event.target.closest('textarea, input, select, .reading-card-strip')) return;
     start = { x: event.clientX, y: event.clientY };
   });
   el.addEventListener('pointerup', (event) => {
@@ -2469,7 +2436,7 @@ function bindWheelSteps(el, onStep, { threshold = 40 } = {}) {
   let locked = false;
   let quiet = 0;
   el.addEventListener('wheel', (event) => {
-    if (event.target.closest('textarea') || event.ctrlKey) return;
+    if (event.target.closest('textarea, .reading-card-strip') || event.ctrlKey) return;
     if (Math.abs(event.deltaY) >= Math.abs(event.deltaX)) {
       for (let node = event.target; node && node !== el; node = node.parentElement) {
         const overflow = getComputedStyle(node).overflowY;
@@ -2493,12 +2460,6 @@ function bindWheelSteps(el, onStep, { threshold = 40 } = {}) {
   }, { passive: false });
 }
 
-function closingStatus(error) {
-  if (error && error.name === 'AbortError') return 'Yorum bu sefer yetişmedi. Üstteki sentez duruyor.';
-  if (error && error.code === 'missing-model') return 'Yorum modeli henüz hazır değil. Üstteki sentez duruyor.';
-  return 'Yorum kapısı kapalı. Üstteki sentez duruyor.';
-}
-
 // Genel yorum önce şablonla gelir; model cevabı yetişirse sayfaları yeniden dizilir.
 function setClosingText(text, token) {
   if (token !== state.renderToken) return;
@@ -2509,48 +2470,39 @@ function setClosingText(text, token) {
   const measure = storyMeasure();
   paginateChapter(chapter, measure);
   measure.innerHTML = '';
-  if (story.at.chapter === index) showStoryPage(index, 0, 1);
+  if (story.at.chapter === index) showStoryPage(index, Math.min(story.at.page,chapter.pages.length-1), 1, {quiet:true});
   else updateStoryNav();
 }
 
 async function fillClosing(reading, spread, interpretation, token) {
-  if (!story.chapters.some((c) => c.kind === 'closing')) return;
-  if (interpretation.closing && (interpretation.closingSource === 'llm' || interpretation.closingVoice === ORACLE.VOICE)) {
-    setClosingText(interpretation.closing, token);
-    return;
-  }
-  const previous = await service.previousReadings(reading.id);
-  if (token !== state.renderToken) return;
-  const draft = ORACLE.longClosing(reading, spread, TAROT, previous);
-  setClosingText(draft, token);
-  interpretation.closing = draft;
-  interpretation.closingSource = 'template';
-  interpretation.closingVoice = ORACLE.VOICE;
-  const persist = async (text, source) => {
-    try { await service.saveClosing(reading.id, text, source); if (token === state.renderToken) updateStorageNotice(); }
-    catch (error) { if (token === state.renderToken) reportReadingError(error); }
-  };
-  await persist(draft, 'template');
-  if (token !== state.renderToken) return;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 25000);
+  const status=(text)=>{if(token===state.renderToken && $('#oracle-status'))$('#oracle-status').textContent=text;};
+  const saved=UI.generalText(interpretation);
+  if(saved){setClosingText(saved,token);status('');return;}
+  const previous=await service.previousReadings(reading.id);
+  const draft=ORACLE.longClosing(reading,spread,TAROT,previous);
+  setClosingText(draft,token);
+  const oldState=interpretation.oracleState || {};
+  status('Kartların birlikte anlattığı yorum hazırlanıyor.');
+  let ticket=oldState.ticket;
+  let persistenceError;
+  const persist=async(write)=>{try{return await write();}catch(error){persistenceError=error;return null;}};
   try {
-    const recentClosings = previous.slice(0, 10).map((item) => item.interpretation && item.interpretation.closing).filter(Boolean);
-    const text = await ORACLE.closing(reading, spread, TAROT, { signal: ctrl.signal, recentClosings });
-    const longEnough = text && text.trim().split(/\s+/).length >= 180;
-    if (token !== state.renderToken || !longEnough) throw new Error('short');
-    interpretation.closing = text.trim();
-    interpretation.closingSource = 'llm';
-    setClosingText(interpretation.closing, token);
-    await persist(interpretation.closing, 'llm');
-  } catch (error) {
-    if (token !== state.renderToken) return;
-    interpretation.closing = draft;
-    interpretation.closingSource = 'template';
-    setClosingText(draft, token);
-    await persist(draft, 'template');
-  } finally {
-    clearTimeout(timer);
+    const result=await ORACLE.generate(reading,spread,{ticket,onTicket:async(value)=>{
+      ticket=value;interpretation.oracleState={status:'pending',ticket};
+      await persist(()=>service.saveOracleState(reading.id,interpretation.oracleState));
+    }});
+    Object.assign(interpretation,{holistic:result,closing:result.general,closingSource:'llm',oracleState:{status:'ready',...(ticket?{ticket}:{})}});
+    const savedResult=await persist(()=>service.saveHolistic(reading.id,result,{source:'llm',ticket}));
+    if(savedResult)Object.assign(interpretation,savedResult);
+    if(token===state.renderToken){setClosingText(result.general,token);status(persistenceError?'Yorum hazır. Bu cihazda kaydedilemedi.':'');updateStorageNotice();refreshOpenReadingDetail?.(reading,spread,interpretation);}
+  } catch(error) {
+    ticket=error.ticket||ticket;
+    const code=error.code||'network';
+    interpretation.oracleState={status:['unknown','network','pending','upstream-unavailable','store-unavailable'].includes(code)?'unknown':code==='invalid-upstream-response'?'failed':'local',...(ticket?{ticket}:{}),reason:code.slice(0,80)};
+    await persist(()=>service.saveOracleState(reading.id,interpretation.oracleState));
+    interpretation.closing=draft;interpretation.closingSource='template';
+    await persist(()=>service.saveClosing(reading.id,draft,'template'));
+    if(token===state.renderToken){setClosingText(draft,token);status('Şu anda temel yorum sunuluyor. Kişisel yorum geçici olarak kullanılamıyor.');updateStorageNotice();}
   }
 }
 
@@ -2604,8 +2556,10 @@ async function resumeReading(reading) {
 
 // Kart rehberinden açılınca önceki/sonraki gezinmesi için görünen kart sırası.
 let detailContext = null;
+let detailReading = null, detailOpener = null;
 
 function fillCardDetail(cardId, reversed) {
+  renderReadingDetail(null);
   const card = TAROT.getCard(cardId);
   const img = $('#card-dialog-img');
   img.src = card.image;
@@ -2680,10 +2634,30 @@ function stepCardDetail(direction) {
   (focusTarget.disabled ? (direction > 0 ? $('#card-prev') : $('#card-next')) : focusTarget).focus();
 }
 
-function openCardDetail(cardId, reversed, fromImg, ids = null) {
+function renderReadingDetail(detail) {
+ detailReading=detail;
+ const context=$('#card-reading-context'),connections=$('#card-reading-connections');
+ context.hidden=!detail;connections.hidden=!detail?.connections.length;
+ $('#card-reading-context-text').textContent=detail?.context||'';
+ $('#card-reading-position').textContent=detail?`${detail.positionLabel} · Bu okumada ${detail.drawnReversed?'ters':'düz'}`:'';
+ const list=$('#card-reading-connections-list');list.replaceChildren(...(detail?.connections||[]).map(c=>{
+  const li=document.createElement('li'),label=document.createElement('h4'),text=document.createElement('p');label.textContent=c.label;text.textContent=c.text;li.append(label,text);return li;
+ }));
+}
+function refreshOpenReadingDetail(reading,spread,interpretation) {
+ if(dialogs.card.open && detailReading?.readingId===reading.id){
+  const positionKey=detailReading.positionKey;
+  const detail=UI.cardReadingDetail({reading,spread,interpretation,positionKey});
+  renderReadingDetail({...detail,readingId:reading.id,positionKey});
+ }
+}
+
+function openCardDetail(cardId, reversed, fromImg, ids = null, readingDetail = null) {
+  detailOpener=document.activeElement;
   const dialog = dialogs.card;
   detailContext = ids && ids.length ? { ids, index: Math.max(0, ids.indexOf(cardId)) } : null;
   const img = fillCardDetail(cardId, reversed);
+  renderReadingDetail(readingDetail);
   updateCardNav();
   dialog.showModal();
   if (!fromImg || reduced()) return;
@@ -3387,6 +3361,8 @@ if (window.ResizeObserver) {
 // Kart detayında önceki/sonraki ile gezilen kart, pencere kapanınca destede ortaya gelir.
 dialogs.card.addEventListener('close', () => {
   if (stage.dataset.view === 'guide' && detailContext) setDeckTarget(detailContext.index);
+  if(detailOpener?.isConnected)detailOpener.focus({preventScroll:true});
+  detailOpener=null;detailReading=null;
 });
 
 $('.guide-filters').addEventListener('keydown', (event) => {
@@ -3459,6 +3435,16 @@ resizeLayout();
 document.fonts?.ready.then(() => setActiveNav(stage.dataset.view, true));
 history.replaceState({ kd: 'base' }, '');
 go('intent', { focus: false });
+const requestedEntry = window.TAROT_DISCOVERY?.readEntry(location.search);
+if (requestedEntry) {
+  selectedIntentId = requestedEntry.intentId;
+  resetInputs();
+  state.intentId = requestedEntry.intentId;
+  state.spreadId = requestedEntry.spreadId;
+  state.startedAt = performance.now();
+  if (requestedEntry.spreadId === 'daily') openDaily().catch(reportReadingError);
+  else go('confirm');
+}
 
 $('#storage-export').addEventListener('click', () => {
   const raw = service.recoveryBackup();

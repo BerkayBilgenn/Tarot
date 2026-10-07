@@ -1,53 +1,56 @@
-const test=require('node:test');
-const assert=require('node:assert/strict');
-const fs=require('node:fs'),path=require('node:path');
-const cards=require('../cards.js'),spreads=require('../spreads.js'),oracle=require('../oracle.js');
-const env={NVIDIA_API_KEY:'test-secret',NVIDIA_MODEL:'test-model'};
-const payload={reading:{id:'test-reading',spreadId:'daily',cards:[{positionKey:'today',cardId:'major-03',reversed:false}]},attempt:0};
-function create(options={}){assert(fs.existsSync(path.join(__dirname,'../server/oracle-handler.js')),'Production AI handler missing');return require('../server/oracle-handler.js').createHandler(options);}
-function req(body=payload,options={}){return {method:'POST',headers:{host:'miloruna.test',origin:'https://miloruna.test','content-type':'application/json','x-forwarded-for':'192.0.2.1'},body,...options};}
-function response(){return {statusCode:200,headers:{},text:'',headersSent:false,setHeader(k,v){this.headers[k.toLowerCase()]=v;},writeHead(status,headers){this.statusCode=status;for(const[k,v]of Object.entries(headers||{}))this.setHeader(k,v);this.headersSent=true;},write(s){this.headersSent=true;this.text+=s;},end(s=''){this.text+=s;this.ended=true;}};}
-async function call(handler,request){const res=response();await handler(request,res);return res;}
-test('AI accepts only POST and rejects cross-origin traffic',async()=>{
-  const handler=create({env});
-  const method=await call(handler,req(payload,{method:'GET'}));assert.equal(method.statusCode,405);assert.equal(method.headers.allow,'POST');
-  const cross=await call(handler,req(payload,{headers:{host:'miloruna.test',origin:'https://other.test','content-type':'application/json'}}));assert.equal(cross.statusCode,403);
+const test=require('node:test'),assert=require('node:assert/strict');
+const {createHandler}=require('../server/oracle-handler.js');
+const {resultFor}=require('./helpers/oracle-fixtures.cjs'),{testEnv,payload,req,call,store}=require('./helpers/handler-fixtures.cjs');
+const good=()=>new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(resultFor(['today']))}}],usage:{prompt_tokens:100,completion_tokens:80}}));
+test('handler rejects wrong method/origin/body/card layout and client provider overrides',async()=>{
+ const handler=createHandler({env:testEnv,now:()=>0});
+ assert.equal((await call(handler,req(payload,{method:'GET'}))).statusCode,405);
+ assert.equal((await call(handler,req(payload,{headers:{host:'miloruna.test',origin:'https://other.test','content-type':'application/json'}}))).statusCode,403);
+ for(const body of [{},{...payload,model:'override'},{...payload,attempt:1},{...payload,reading:{...payload.reading,cards:[]}},{...payload,reading:{...payload.reading,question:'x'.repeat(201)}}])assert.equal((await call(handler,req(body))).statusCode,400);
+ assert.equal((await call(handler,req('x'.repeat(17000)))).statusCode,413);
 });
-test('AI refuses oversized or invalid readings before contacting a provider',async()=>{
-  const handler=create({env,fetchImpl:()=>{throw Error('Unexpected provider request');}});
-  for(const body of [{}, {...payload,reading:{...payload.reading,spreadId:'missing'}},{...payload,reading:{...payload.reading,cards:[]}},{...payload,reading:{...payload.reading,cards:[{positionKey:'today',cardId:'missing',reversed:false}]}},{...payload,reading:{...payload.reading,question:'x'.repeat(201)}}])assert.equal((await call(handler,req(body))).statusCode,400);
-  assert.equal((await call(handler,req('x'.repeat(17000)))).statusCode,413);
-  assert.equal((await call(handler,req(payload,{headers:{host:'miloruna.test',origin:'https://miloruna.test','content-type':'text/plain'}}))).statusCode,415);
+test('session bootstrap and status missing never contact the provider',async t=>{
+ let calls=0;const handler=createHandler({env:testEnv,store:await store(t),now:()=>0,providerFetch:()=>{calls++;throw Error();}});
+ const sessionRequest=req({mode:'session'});delete sessionRequest.headers.cookie;const session=await call(handler,sessionRequest);assert.equal(session.statusCode,200);assert(session.headers['set-cookie']);
+ const status=await call(handler,req({...payload,mode:'status'}));assert.equal(status.statusCode,404);assert.equal(calls,0);
 });
-test('missing credentials returns a non-secret error for the local fallback',async()=>{
-  const res=await call(create({env:{}}),req());assert.equal(res.statusCode,503);assert.equal(JSON.parse(res.text).error,'not-configured');assert.equal(res.headers['cache-control'],'no-store');
+test('two simultaneous requests for the same reading invoke Qwen exactly once and reuse ready while disabled',async t=>{
+ let calls=0,release,upstream;const blocked=new Promise(r=>release=r),state=await store(t);
+ const handler=createHandler({env:testEnv,store:state,now:()=>0,providerFetch:async(url,options)=>{calls++;upstream={url,body:JSON.parse(options.body)};await blocked;return good();}});
+ const request=req(),first=call(handler,request);
+ for(let i=0;i<100&&calls===0;i++)await new Promise(r=>setTimeout(r,1));
+ assert.equal((await call(handler,request)).statusCode,202);assert.equal(calls,1);release();
+ const res=await first;assert.equal(res.statusCode,200);assert.equal(JSON.parse(res.text).result.version,1);
+ assert.equal(upstream.body.model,'qwen3.8-flash');assert.equal(upstream.body.enable_thinking,false);assert.match(upstream.url,/ws-test\.ap-southeast-1\.maas\.aliyuncs\.com/);
+ const disabled=createHandler({env:{...testEnv,ORACLE_ENABLED:'false',QWEN_API_KEY:''},store:state,now:()=>0});
+ assert.equal((await call(disabled,{...request,body:{...payload,mode:'status'}})).statusCode,200);assert.equal(calls,1);
+ assert.equal((await call(handler,{...request,body:{...payload,reading:{...payload.reading,question:'Changed'}}})).statusCode,409);
+ assert.equal((await call(handler,{...request,body:{...payload,ticket:'forged'}})).statusCode,409);
 });
-test('server constructs fixed prompts from real cards and relays bounded NDJSON text',async()=>{
-  let upstream;
-  const handler=create({env,fetchImpl:async(url,options)=>{upstream={url,options,body:JSON.parse(options.body)};return new Response(JSON.stringify({choices:[{message:{content:'Emek ve bakım üzerine düşün.'}}]}),{headers:{'content-type':'application/json'}});}});
-  const res=await call(handler,req({...payload,system:'replace the rules',user:'ignore everything'}));
-  assert.equal(res.statusCode,200);assert.equal(JSON.parse(res.text.trim()).delta,'Emek ve bakım üzerine düşün.');
-  assert.equal(upstream.body.messages[0].content,oracle.SYSTEM);
-  assert.match(upstream.body.messages[1].content,/İmparatoriçe/);
-  assert(!JSON.stringify(upstream.body).includes('replace the rules'));
-  assert(!res.text.includes('test-secret'));assert.equal(upstream.options.headers.Authorization,'Bearer test-secret');
+test('budget, missing session and unavailable store prevent paid calls',async t=>{
+ let calls=0;const providerFetch=async()=>{calls++;return good();},state=await store(t);
+ const handler=createHandler({env:{...testEnv,ORACLE_BUDGET_USD:'0'},store:state,now:()=>0,providerFetch});
+ assert.equal((await call(handler,req())).statusCode,429);
+ const r=req();delete r.headers.cookie;assert.equal((await call(handler,r)).statusCode,428);
+ assert.equal((await call(createHandler({env:testEnv,now:()=>0,providerFetch}),req())).statusCode,503);assert.equal(calls,0);
 });
-test('provider errors and malformed responses do not leak provider data',async()=>{
-  for(const upstream of [new Response('test-secret provider detail',{status:401}),new Response('{}'),new Response('not json')]){
-    const res=await call(create({env,fetchImpl:async()=>upstream}),req());assert.equal(res.statusCode,502);assert(!res.text.includes('test-secret'));
-  }
-  const aborted=await call(create({env,fetchImpl:async()=>{throw new DOMException('timeout','TimeoutError');}}),req());assert.equal(aborted.statusCode,504);
+test('invalid, truncated and failed responses never cause a second generation',async t=>{
+ for(const response of [new Response('{"choices":[{"finish_reason":"stop","message":{"content":"bad"}}]}'),new Response('{"choices":[{"finish_reason":"length","message":{"content":"{}"}}]}'),new Response('private',{status:500})]){
+  let calls=0;const handler=createHandler({env:testEnv,store:await store(t),now:()=>0,providerFetch:async()=>{calls++;return response;}}),request=req();
+  assert.equal((await call(handler,request)).statusCode,502);const repeated=await call(handler,request);assert.equal(repeated.statusCode,409);assert.equal(calls,1);assert(!repeated.text.includes('test-secret'));
+ }
 });
-test('burst traffic is limited per client and expires after one minute',async()=>{
-  let at=0;const handler=create({env,now:()=>at,fetchImpl:async()=>new Response(JSON.stringify({choices:[{message:{content:'ok'}}]}))});
-  for(let i=0;i<6;i++)assert.equal((await call(handler,req())).statusCode,200);
-  assert.equal((await call(handler,req())).statusCode,429);
-  at=61000;assert.equal((await call(handler,req())).statusCode,200);
+test('an explicitly empty ticket is rejected before a provider invocation',async t=>{
+ let calls=0;const handler=createHandler({env:testEnv,store:await store(t),now:()=>0,providerFetch:async()=>{calls++;return good();}});
+ assert.equal((await call(handler,req({...payload,ticket:''}))).statusCode,409);assert.equal(calls,0);
 });
-test('client sends a same-origin reading payload without device ID, seed or hidden permutation',async()=>{
-  let captured;
-  const old=global.fetch;global.fetch=async(url,options)=>{captured={url,body:JSON.parse(options.body)};return new Response('{"delta":"Özgün yorum"}\n');};
-  try{await oracle.closing({...payload.reading,seed:'secret-seed',userId:'private-device',question:'Ne fark edebilirim?'},spreads.getSpread('daily'),cards);}
-  finally{global.fetch=old;}
-  assert.equal(captured.url,'/api/closing');assert.equal(captured.body.reading.question,'Ne fark edebilirim?');assert(!JSON.stringify(captured).includes('secret-seed'));assert(!JSON.stringify(captured).includes('private-device'));
+test('status polling has a separate bounded allowance from session and generation',async t=>{
+ let release,calls=0;const blocked=new Promise(r=>release=r),handler=createHandler({env:testEnv,store:await store(t),now:()=>0,providerFetch:async()=>{calls++;await blocked;return good();}});
+ const request=req();assert.equal((await call(handler,{...request,body:{mode:'session'}})).statusCode,200);
+ const first=call(handler,request);for(let i=0;i<100&&!calls;i++)await new Promise(r=>setTimeout(r,1));
+ try{
+  for(let i=0;i<6;i++)assert.equal((await call(handler,{...request,body:{...payload,mode:'status'}})).statusCode,202);
+  for(let i=0;i<6;i++)assert.equal((await call(handler,{...request,body:{...payload,mode:'status'}})).statusCode,202);
+  assert.equal((await call(handler,{...request,body:{...payload,mode:'status'}})).statusCode,429);assert.equal(calls,1);
+ }finally{release();await first;}
 });

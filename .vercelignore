@@ -19,3 +19,9 @@ assets/mockup-reference.png
 02-yorumlama-ekrani.png
 oracle-proxy.js
 tarot-tasarim-promptlari.txt
+.local-data
+scripts/local-preview.cjs
+scripts/live-samples.cjs
+evidence/
+VERIFICATION-HOLISTIC.md
+qwen-deneme-yorumlari.md

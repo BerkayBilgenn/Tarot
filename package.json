@@ -2,10 +2,13 @@
   "name": "miloruna",
   "version": "1.0.0",
   "private": true,
-  "engines": { "node": "24.x" },
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "test": "node --test tests/*.test.cjs",
     "build": "node scripts/build.cjs",
-    "start": "node scripts/preview.cjs"
+    "start": "node scripts/preview.cjs",
+    "local": "node scripts/local-preview.cjs"
   }
 }

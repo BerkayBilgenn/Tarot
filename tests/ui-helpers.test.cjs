@@ -133,22 +133,8 @@ test('wordStep kelime aralığını toplam süre sınırına göre kısaltır', 
   assert.equal(wordStep(0, { step: 18, max: 1400 }), 18);
 });
 
-test('storyOutline okumayı genel bakış, kartlar, karşılaştırma, çiftler, genel yorum ve bitiş sırasıyla anlatır', () => {
-  assert.deepEqual(
-    storyOutline({ spreadId: 'three', positionKeys: ['past', 'present', 'future'] }).map((c) => c.id),
-    ['summary', 'card:past', 'card:present', 'card:future', 'closing', 'finish']
-  );
-  assert.deepEqual(
-    storyOutline({ spreadId: 'decision', positionKeys: ['now', 'a'], hasComparison: true, hasPairs: true }).map((c) => c.id),
-    ['summary', 'card:now', 'card:a', 'comparison', 'pairs', 'closing', 'finish']
-  );
-  // Günün kartında önce kart, sonra günün teması gelir.
-  assert.deepEqual(
-    storyOutline({ spreadId: 'daily', positionKeys: ['card'] }).map((c) => c.id),
-    ['card:card', 'summary', 'closing', 'finish']
-  );
-  const card = storyOutline({ spreadId: 'three', positionKeys: ['past'] })[1];
-  assert.deepEqual(card, { id: 'card:past', kind: 'card', key: 'past' });
+test('storyOutline presents the general interpretation without mandatory card chapters',()=>{
+ assert.deepEqual(storyOutline({spreadId:'daily',positionKeys:['today']}),[{id:'closing',kind:'closing'},{id:'finish',kind:'finish'}]);
 });
 
 test('coverPoint arka plan görselindeki noktayı cover + center top yerleşiminde ekrana çevirir', () => {

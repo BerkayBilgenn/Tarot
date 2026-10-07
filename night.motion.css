@@ -66,6 +66,13 @@
 .intent-choice:has(input:checked)::after{animation:dot-in .5s var(--spring)}
 @keyframes dot-in{from{transform:scale(0);opacity:0}}
 
+/* Telefonda dağıtma hareketi snap konumunu da oynatır. Kartlar kendi yerlerinde görünür;
+   dokunulan kart ve etiketi sürekli süzülmez. Karuselin seçim hareketi CSS'te korunur. */
+@media(max-width:900px){
+  .intent-choice{animation:fade .35s ease-out both;animation-delay:0s}
+  .intent-art,.intent-title,.intent-meta,.done-badge,.intent-cta{animation:none}
+}
+
 /* ---------- 2 · Onay: harita ile dizilim birbirini işaret eder ---------- */
 .position-list li{transition:background .3s,transform .4s var(--spring)}
 .position-list li.is-hint{background:linear-gradient(90deg,#d8b7821f,#d8b78200);transform:translateX(4px)}

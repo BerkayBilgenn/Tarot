@@ -269,17 +269,28 @@
     return Math.min(step, Math.max(2, Math.floor(max / count)));
   }
 
-  // Yorumun anlatım sırası. Günün kartında önce kart, sonra günün teması gelir.
-  function storyOutline({ spreadId, positionKeys, hasComparison = false, hasPairs = false }) {
-    const cards = positionKeys.map((key) => ({ id: `card:${key}`, kind: 'card', key }));
-    const summary = { id: 'summary', kind: 'summary' };
-    const tail = [
-      ...(hasComparison ? [{ id: 'comparison', kind: 'comparison' }] : []),
-      ...(hasPairs ? [{ id: 'pairs', kind: 'pairs' }] : []),
-      { id: 'closing', kind: 'closing' },
-      { id: 'finish', kind: 'finish' }
-    ];
-    return spreadId === 'daily' ? [...cards, summary, ...tail] : [summary, ...cards, ...tail];
+  function generalText(interpretation,fallback='') {
+    const oracle=root.TAROT_ORACLE || (typeof require==='function'?require('./oracle.js'):null);
+    const keys=(interpretation?.positions||[]).map(p=>p.positionKey);
+    const result=oracle?.validateResult(interpretation?.holistic,keys);
+    if(result)return result.general;
+    return interpretation?.closingSource==='llm' && interpretation.closing ? interpretation.closing : fallback;
+  }
+
+  function storyOutline() { return [{id:'closing',kind:'closing'},{id:'finish',kind:'finish'}]; }
+  function cardReadingDetail({reading,spread,interpretation,positionKey}) {
+    const position=spread?.positions.find(p=>p.key===positionKey),drawn=reading?.cards.find(c=>c.positionKey===positionKey);
+    if(!position||!drawn)return null;
+    const oracle=root.TAROT_ORACLE || (typeof require==='function'?require('./oracle.js'):null);
+    const cards=root.TAROT_CARDS || (typeof require==='function'?require('./cards.js'):null);
+    const result=oracle?.validateResult(interpretation?.holistic,spread.positions.map(p=>p.key));
+    const p=result?.positions.find(p=>p.positionKey===positionKey),local=interpretation?.positions?.find(p=>p.positionKey===positionKey);
+    const connections=(p?.connections||[]).map(c=>{
+      const seat=spread.positions.find(p=>p.key===c.positionKey),card=reading.cards.find(p=>p.positionKey===c.positionKey);
+      return {positionKey:c.positionKey,label:[seat.label,cards.getCard(card.cardId)?.nameTr].filter(Boolean).join(' · '),text:c.text};
+    });
+    const positionLabel=spread.id==='decision'&&position.key.startsWith('a_')?`${reading.optionA||'A'} · ${position.label}`:spread.id==='decision'&&position.key.startsWith('b_')?`${reading.optionB||'B'} · ${position.label}`:position.label;
+    return {positionLabel,drawnReversed:drawn.reversed,context:p?.context||[local?.seat,local?.context,local?.tie].filter(Boolean).join(' ')||local?.text||'',connections};
   }
 
   // background-size:cover + center top ile çizilen görseldeki bir noktanın ekrandaki yeri.
@@ -290,7 +301,7 @@
 
   const api = {
     spreadDisplayName, shuffleInvite, matchesHistoryQuery, fanLayout, splitSentences, paginateBlocks, paginateText, pageWindow,
-    fitCount, guideFanPose, snapTarget, wordStep, storyOutline, coverPoint, labelSides, sideLabelLayout,
+    fitCount, guideFanPose, snapTarget, wordStep, generalText, cardReadingDetail, storyOutline, coverPoint, labelSides, sideLabelLayout,
     stackCardWidth, stripLayout
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

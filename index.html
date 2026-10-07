@@ -15,15 +15,31 @@
   <meta name="color-scheme" content="dark">
   <link rel="icon" type="image/png" sizes="96x96" href="/favicon.png">
   <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico">
-  <meta name="description" content="Miloruna ile bir nefes al. Niyetini seç, kartlarını kendi elinle çek. Kendine dön.">
-  <title>Miloruna · Tarot okuması</title>
+  <meta name="description" content="Miloruna’da ücretsiz online tarot açılımı yap. Günlük, üç kart, aşk, kariyer ve Kelt Haçı açılımlarını keşfet; 78 tarot kartının anlamlarını öğren.">
+  <title>Miloruna | Ücretsiz Online Tarot ve Kart Açılımları</title>
+  <link rel="canonical" href="https://www.miloruna.com/">
+  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
+  <meta property="og:site_name" content="Miloruna">
+  <meta property="og:locale" content="tr_TR">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Miloruna | Ücretsiz Online Tarot ve Kart Açılımları">
+  <meta property="og:description" content="Kartlarını kendi elinle seç. Ücretsiz tarot açılımları ve 78 kartın düz ve ters anlamları Miloruna’da.">
+  <meta property="og:url" content="https://www.miloruna.com/">
+  <meta property="og:image" content="https://www.miloruna.com/assets/night/hero-card-strip.webp">
+  <meta property="og:image:alt" content="Miloruna tarot kartları">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Miloruna | Ücretsiz Online Tarot ve Kart Açılımları">
+  <meta name="twitter:description" content="Ücretsiz tarot açılımı yap; günlük, aşk, kariyer ve kart rehberini keşfet.">
+  <meta name="twitter:image" content="https://www.miloruna.com/assets/night/hero-card-strip.webp">
+  <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://www.miloruna.com/#publisher","name":"Miloruna","url":"https://www.miloruna.com/"},{"@type":"WebSite","@id":"https://www.miloruna.com/#website","name":"Miloruna","url":"https://www.miloruna.com/","inLanguage":"tr-TR","publisher":{"@id":"https://www.miloruna.com/#publisher"}},{"@type":"WebPage","@id":"https://www.miloruna.com/#page","url":"https://www.miloruna.com/","name":"Miloruna | Ücretsiz Online Tarot ve Kart Açılımları","description":"Türkçe ücretsiz tarot açılımları ve 78 tarot kartının rehberi.","inLanguage":"tr-TR","isPartOf":{"@id":"https://www.miloruna.com/#website"}}]}</script>
   <link rel="preload" href="assets/fonts/display-soft.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/night/night-scene.webp" as="image" type="image/webp" fetchpriority="high">
   <link rel="stylesheet" href="night.tokens.css?v=4">
   <link rel="stylesheet" href="night.css?v=15">
-  <link rel="stylesheet" href="night.motion.css?v=4">
+  <link rel="stylesheet" href="night.motion.css?v=5">
+  <link rel="stylesheet" href="home-discovery.css?v=1">
   <script src="cards.js?v=2" defer></script>
-  <script src="spreads.js?v=3" defer></script>
+  <script src="spreads.js?v=4" defer></script>
   <script src="ui-helpers.js?v=5" defer></script>
   <script src="motion.js?v=3" defer></script>
   <script src="shuffle.js?v=2" defer></script>
@@ -32,7 +48,8 @@
   <script src="reading.js?v=10" defer></script>
   <script src="oracle.js?v=14" defer></script>
   <script src="reminder.js?v=1" defer></script>
-  <script src="app.js?v=49" defer></script>
+  <script src="discovery.js?v=1" defer></script>
+  <script src="app.js?v=50" defer></script>
 </head>
 <body>
   <div class="scene" id="app" data-step="intent" data-view="home">
@@ -47,9 +64,9 @@
         <button id="open-history" type="button" data-nav="history">Okumalarım</button>
         <button id="open-settings" type="button" data-nav="settings">Ayarlar</button>
       </nav>
-      <span class="moon-mark" aria-hidden="true">
+      <a class="moon-mark" href="/rehber/" aria-label="Tarot rehberini aç">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M20.4 14.6A8.5 8.5 0 0 1 9.4 3.6a.6.6 0 0 0-.8-.7A9.5 9.5 0 1 0 21.1 15.4a.6.6 0 0 0-.7-.8Z"/></svg>
-      </span>
+      </a>
     </header>
 
     <main>
@@ -86,6 +103,17 @@
           </button>
           <button class="btn btn-main" type="button" id="primary" hidden></button>
         </div>
+      </section>
+
+      <section class="discovery-home" aria-labelledby="discovery-title">
+        <h2 id="discovery-title">Ücretsiz online tarot açılımı</h2>
+        <p>Miloruna’da niyetini seç, kartlarını kendi elinle çek ve yorumunu oku. Günlük kart, üç kart, aşk, kariyer, karar ve Kelt Haçı açılımları ücretsizdir; üyelik gerektirmez. Kartların sembollerini ve düz ile ters anlamlarını rehberden keşfedebilirsin.</p>
+        <nav aria-label="Tarot açılımları">
+          <a href="/gunluk-tarot/">Günün kartı</a><a href="/uc-kart-tarot/">Üç kart tarot</a><a href="/ask-tarot/">Aşk tarot</a><a href="/kariyer-tarot/">Kariyer tarot</a><a href="/karar-tarot/">Karar tarot</a><a href="/kelt-haci-tarot/">Kelt Haçı</a>
+        </nav>
+        <nav aria-label="Tarot rehberleri"><a href="/tarot-kartlari/">78 tarot kartı ve anlamları</a><a href="/rehber/">Tarot rehberi</a><a href="/rehber/tarot-sorulari/">Tarota ne sorulur?</a></nav>
+        <p>Yorumlar kartların anlamlarını ve açılımdaki konumlarını bir araya getiren sembolik bir okuma sunar. Sorularını ve seçeneklerini kendi deneyiminle birlikte düşünebilirsin.</p>
+        <p class="discovery-small"><a href="/hakkinda/">Miloruna hakkında ve yöntem</a><a href="/gizlilik/">Gizlilik ve veri kullanımı</a></p>
       </section>
 
       <section class="guide-page" id="guide-page" hidden aria-labelledby="guide-title">
@@ -240,6 +268,12 @@
         <section class="card-meaning" id="card-meaning" aria-live="polite">
           <h3 id="card-meaning-title">Düz anlam</h3>
           <p id="card-meaning-text"></p>
+        </section>
+        <section class="card-meaning reading-context" id="card-reading-context" hidden>
+          <h3>Bu açılımdaki yeri</h3><small id="card-reading-position"></small><p id="card-reading-context-text"></p>
+        </section>
+        <section class="card-meaning reading-connections" id="card-reading-connections" hidden>
+          <h3>Diğer kartlarla bağlantısı</h3><ul id="card-reading-connections-list"></ul>
         </section>
         <div class="card-detail-nav" id="card-dialog-nav" hidden>
           <button type="button" class="link-button" id="card-prev">
