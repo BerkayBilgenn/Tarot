@@ -14,6 +14,10 @@ npm start
 
 ## Vercel
 
+Mevcut yayın projesi `berkaybilgenn/taroot`, ana adresi `https://www.miloruna.com` ve Node.js sürümü `24.x`. Yayın önce `vercel deploy --prod --skip-domain` ile hazırlanır; doğrulandıktan sonra `vercel promote` ile ana adrese geçirilir. `.vercelignore` gizli ortam dosyalarını, geliştirme proxy'sini, testleri ve tasarım/inceleme belgelerini kaynak yüklemesinden de çıkarır; font lisansları korunur.
+
+Hobby hesabında son Git kaydının yazarı hosting sahibinin bağlı GitHub hesabıyla eşleşmelidir. Farklı bir kişisel/iş e-posta adresi kullanmak, aynı kişinin yerel kaydının hosting tarafından başka bir hesap olarak görülmesine neden olabilir. Yayın kaydında doğrulanmış proje sahibinin GitHub kimliği kullanılır; diğer projelerin genel Git ayarları değiştirilmez.
+
 `vercel.json`, framework `Other`, build `npm run build`, output `dist` ve 30 saniyelik `/api/closing` işlevini tanımlar. Statik çıktı ve işlev aynı kökenden sunulur. Header kuralları içerik güvenliği, çerçeveleme koruması, kaynak türü kontrolü ve önbellek davranışını tanımlar. Google Analytics'in mevcut inline kodunun SHA-256 özeti CSP'de izinlidir; bu inline kod değişirse CSP özeti de güncellenmelidir.
 
 Canlı AI isteniyorsa hosting'in server-side environment ayarlarına iki değer eklenir:
