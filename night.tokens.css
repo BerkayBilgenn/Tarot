@@ -23,3 +23,4 @@
   --night-dialog-shadow:0 36px 100px #0009;
   --night-ease:cubic-bezier(.2,.75,.25,1);--night-fast:200ms;--night-flip:500ms;
 }
+@media(max-width:900px){:root{--night-covers:url('assets/night/hero-card-strip-mobile.webp')}}

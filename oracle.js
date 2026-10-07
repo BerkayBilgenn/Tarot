@@ -1,9 +1,9 @@
 // Yerel yorum. Kart anlamı koddan gelir; model yalnızca kapanışı yazar.
-// Sayfa 127.0.0.1:8787 kapısına gider. Anahtar orada, .env içinde kalır.
+// Aynı kökenli sunucu işlevi anahtarı barındırır; bağlantı yoksa yerel yorum kullanılır.
 (function (root) {
   'use strict';
 
-  const ENDPOINT = 'http://127.0.0.1:18791/closing';
+  const ENDPOINT = '/api/closing';
   const MODEL = 'deepseek-ai/deepseek-v4.1-flash';
 
   const SYSTEM = [
@@ -468,7 +468,11 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: opts.signal,
-      body: JSON.stringify({ system: SYSTEM, user: brief(reading, spread, cardsApi, attempt) }),
+      body: JSON.stringify({ reading: {
+        id: reading.id, spreadId: spread.id,
+        question: reading.question, optionA: reading.optionA, optionB: reading.optionB, personName: reading.personName,
+        cards: reading.cards.map(({positionKey, cardId, reversed}) => ({positionKey, cardId, reversed}))
+      }, attempt }),
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));

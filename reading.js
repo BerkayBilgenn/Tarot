@@ -122,8 +122,53 @@
     const cardIds = cards.CARDS.map((card) => card.id);
 
     const wait = (value) => new Promise((resolve) => setTimeout(() => resolve(value), latency));
-    const load = () => { try { return JSON.parse(storage.getItem(KEY)) || []; } catch (e) { return []; } };
-    const save = (list) => storage.setItem(KEY, JSON.stringify(list));
+    const health = { recovered: false, backupSaved: false, writeError: null };
+    let recoveryRaw = null;
+    let deviceId = null;
+    function validReading(r) {
+      if (!r || typeof r !== 'object' || typeof r.id !== 'string' || typeof r.userId !== 'string') return false;
+      const spread = spreads.getSpread(r.spreadId);
+      if (!spread || !['picking', 'revealing', 'complete', 'abandoned'].includes(r.status)) return false;
+      if (typeof r.createdAt !== 'string' || !Number.isFinite(Date.parse(r.createdAt)) || !/^[0-9a-f]{32}$/.test(r.seed)) return false;
+      if (!Array.isArray(r.cards) || r.cards.length > spread.cardCount) return false;
+      if (['revealing', 'complete'].includes(r.status) && r.cards.length !== spread.cardCount) return false;
+      if (['question', 'optionA', 'optionB', 'personName', 'completedAt', 'localDate'].some((key) => r[key] !== undefined && typeof r[key] !== 'string')) return false;
+      if (r.completedAt && !Number.isFinite(Date.parse(r.completedAt))) return false;
+      const seen = new Set();
+      return r.cards.every((card, i) => {
+        if (!card || card.positionKey !== spread.positions[i].key || !cardIds.includes(card.cardId) || typeof card.reversed !== 'boolean') return false;
+        if (!Number.isInteger(card.fanIndex) || card.fanIndex < 0 || card.fanIndex >= cardIds.length || seen.has(card.fanIndex)) return false;
+        seen.add(card.fanIndex);
+        return true;
+      });
+    }
+    const load = () => {
+      let raw;
+      let parsed;
+      try {
+        raw = storage.getItem(KEY);
+        if (raw === null) return [];
+        parsed = JSON.parse(raw);
+      } catch (error) { parsed = null; }
+      const list = Array.isArray(parsed) ? parsed.filter(validReading) : [];
+      if (!Array.isArray(parsed) || list.length !== parsed.length) {
+        health.recovered = true;
+        recoveryRaw = raw;
+        try { storage.setItem(KEY + '.recovery', raw); health.backupSaved = true; }
+        catch (error) { health.backupSaved = false; }
+      }
+      return list;
+    };
+    const storageError = (cause) => Object.assign(new Error('Okuma bu cihazda kaydedilemedi.'), {
+      code: cause.name === 'QuotaExceededError' ? 'storage-full' : 'storage-unavailable', cause
+    });
+    const save = (list) => {
+      if (recoveryRaw !== null && !health.backupSaved) {
+        throw Object.assign(new Error('Bozuk kayıtların yedeği alınamadı. Önce kayıtlarını dışa aktar.'), { code: 'storage-recovery' });
+      }
+      try { storage.setItem(KEY, JSON.stringify(list)); health.writeError = null; }
+      catch (error) { const failure = storageError(error); health.writeError = failure.code; throw failure; }
+    };
     const find = (list, id) => {
       const reading = list.find((r) => r.id === id);
       if (!reading) throw new Error('Okuma bulunamadı');
@@ -138,7 +183,14 @@
 
     function userId() {
       let id = storage.getItem(DEVICE);
-      if (!id) { id = 'anon-' + randomSeed(cryptoImpl).slice(0, 16); storage.setItem(DEVICE, id); }
+      if (!id) {
+        id = deviceId || 'anon-' + randomSeed(cryptoImpl).slice(0, 16);
+        // Reading history remains available even when writes are blocked. Creating
+        // or changing a reading still fails through save(), without losing data.
+        try { storage.setItem(DEVICE, id); }
+        catch (error) { health.writeError = storageError(error).code; }
+      }
+      deviceId = id;
       return id;
     }
 
@@ -163,7 +215,9 @@
           changed = true;
         }
       });
-      if (changed) save(list);
+      if (changed) {
+        try { save(list); } catch (error) { /* Expiration must not block read-only startup. */ }
+      }
     }
 
     // Bugünün günün kartları, eskiden yeniye. Ana ekran en son çekileni açar.
@@ -173,7 +227,7 @@
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     }
 
-    function createReading(input) {
+    async function createReading(input) {
       const spread = spreads.getSpread(input.spreadId);
       if (!spread) return Promise.reject(new Error('Bilinmeyen açılım'));
       const list = load();
@@ -235,7 +289,7 @@
       }
     }
 
-    function reveal(readingId, positionKey) {
+    async function reveal(readingId, positionKey) {
       const list = load();
       const reading = find(list, readingId);
       const card = reading.cards.find((c) => c.positionKey === positionKey);
@@ -243,13 +297,26 @@
       return wait(undefined);
     }
 
-    function complete(readingId) {
+    function validInterpretation(value, spread) {
+      if (!value || typeof value.summary !== 'string' || !Array.isArray(value.positions) || value.positions.length !== spread.cardCount) return false;
+      if (['summaryMore', 'closing', 'closingSource', 'closingVoice'].some(key => value[key] !== undefined && typeof value[key] !== 'string')) return false;
+      if (!value.positions.every((p, i) => p && p.positionKey === spread.positions[i].key && typeof p.text === 'string' &&
+        ['seat', 'context', 'tie', 'meaning', 'area'].every(key => p[key] === undefined || typeof p[key] === 'string'))) return false;
+      if (value.comparison !== undefined && (!value.comparison || !['a','b','note'].every(key => typeof value.comparison[key] === 'string'))) return false;
+      if (value.pairs !== undefined && (!Array.isArray(value.pairs) || !value.pairs.every(pair => pair && typeof pair.text === 'string' &&
+        Array.isArray(pair.keys) && pair.keys.length === 2 && pair.keys.every(key => spread.positions.some(p => p.key === key))))) return false;
+      return true;
+    }
+
+    async function complete(readingId) {
       const list = load();
       const reading = find(list, readingId);
+      const spread = spreads.getSpread(reading.spreadId);
+      if (reading.cards.length !== spread.cardCount) throw new Error('Önce tüm kartları seç');
       const old = reading.interpretation;
-      if (!old || old.textVersion !== TEXT_VERSION) {
-        const fresh = interpret(reading, spreads.getSpread(reading.spreadId), cards, priorReadings(list, reading));
-        if (old && old.closingSource === 'llm' && old.closing) Object.assign(fresh, { closing: old.closing, closingSource: 'llm', closingVoice: old.closingVoice });
+      if (!validInterpretation(old, spread) || old.textVersion !== TEXT_VERSION) {
+        const fresh = interpret(reading, spread, cards, priorReadings(list, reading));
+        if (old && old.closingSource === 'llm' && typeof old.closing === 'string' && old.closing) Object.assign(fresh, { closing: old.closing, closingSource: 'llm', closingVoice: typeof old.closingVoice === 'string' ? old.closingVoice : undefined });
         reading.interpretation = fresh;
         save(list);
       }
@@ -257,7 +324,7 @@
     }
 
     // Yorum ekranı açılınca okuma tamamlanmış sayılır ve "Okumalarım"a girer.
-    function markViewed(readingId) {
+    async function markViewed(readingId) {
       const list = load();
       const reading = find(list, readingId);
       if (reading.status !== 'complete') {
@@ -269,7 +336,7 @@
       return wait(publicReading(reading));
     }
 
-    function abandon(readingId) {
+    async function abandon(readingId) {
       const list = load();
       const reading = find(list, readingId);
       if (reading.status !== 'complete') { reading.status = 'abandoned'; save(list); }
@@ -306,7 +373,7 @@
       return wait(priorReadings(list, reading).map(publicReading));
     }
 
-    function patch(readingId, changes) {
+    async function patch(readingId, changes) {
       const list = load();
       const reading = find(list, readingId);
       if (typeof changes.note === 'string') reading.note = changes.note.slice(0, 2000);
@@ -314,7 +381,7 @@
       return wait(undefined);
     }
 
-    function saveClosing(readingId, text, source) {
+    async function saveClosing(readingId, text, source) {
       const list = load();
       const reading = find(list, readingId);
       if (!reading.interpretation) return wait(null);
@@ -332,7 +399,12 @@
       return load().some((r) => r.spreadId === spreadId && r.question && t - Date.parse(r.createdAt) < DAY && similarQuestions(r.question, question));
     }
 
-    return { createReading, pick, reveal, complete, markViewed, abandon, get, dailyToday, draft, list: listReadings, previousReadings, patch, saveClosing, recentSimilar, publicReading, userId };
+    function storageStatus() {
+      const hasBackup = storage.getItem(KEY + '.recovery') !== null;
+      return { ...health, recovered: health.recovered || hasBackup, backupSaved: health.recovered ? health.backupSaved : hasBackup };
+    }
+    return { createReading, pick, reveal, complete, markViewed, abandon, get, dailyToday, draft, list: listReadings, previousReadings, patch, saveClosing, recentSimilar, publicReading, userId,
+      storageStatus, recoveryBackup: () => recoveryRaw ?? storage.getItem(KEY + '.recovery') };
   }
 
   // Yanıt gelmezse aynı pickIndex ile üç kez daha dener; seçim idempotent olduğu için güvenli.

@@ -46,13 +46,15 @@ const dialogs = {
 
 // ---------- Depolama, ayarlar, servis ----------
 
+let sessionStorageOnly = false;
 const storage = (() => {
   try {
-    const probe = '__kd_probe';
-    localStorage.setItem(probe, '1');
-    localStorage.removeItem(probe);
+    // A full store is still readable: never replace existing history with an
+    // empty in-memory store just because a write probe cannot succeed.
+    localStorage.getItem('kd.readings.v1');
     return localStorage;
   } catch (error) {
+    sessionStorageOnly = true;
     return ENGINE.memoryStorage();
   }
 })();
@@ -62,7 +64,10 @@ const settings = Object.assign(
   { reversals: true, motion: null, sound: false, haptic: true, reminder: false, reminderTime: '09:00' },
   (() => { try { return JSON.parse(storage.getItem(SETTINGS_KEY)) || {}; } catch (error) { return {}; } })()
 );
-const saveSettings = () => storage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+const saveSettings = () => {
+  try { storage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
+  catch (error) { showStorageNotice('Tercihlerin bu oturumda geçerli; bu cihazda kaydedilemedi.'); }
+};
 const systemReduced = matchMedia('(prefers-reduced-motion: reduce)');
 const reduced = () => (settings.motion ? settings.motion === 'reduced' : systemReduced.matches);
 const applyMotion = () => {
@@ -71,6 +76,36 @@ const applyMotion = () => {
 };
 
 const service = ENGINE.createService({ cards: TAROT, spreads: SPREADS, storage, latency: 140 });
+
+function showStorageNotice(message) {
+  const notice = $('#storage-notice');
+  if (!notice) return;
+  $('span', notice).textContent = message;
+  notice.hidden = false;
+  $('#storage-export').hidden = !service.storageStatus().recovered;
+}
+function updateStorageNotice() {
+  const health = service.storageStatus();
+  if (health.recovered) showStorageNotice(health.backupSaved
+    ? 'Bazı kayıtlar okunamadı. Geçerli okumaların korundu; kurtarma kopyasını indirebilirsin.'
+    : 'Bazı kayıtlar okunamadı ve yedek kaydedilemedi. Yeni okumadan önce kurtarma kopyasını indir.');
+  else if (sessionStorageOnly) showStorageNotice('Tarayıcı depolaması kullanılamıyor. Okumaların yalnız bu oturumda saklanır; sayfayı kapattığında kaybolur.');
+  else if (health.writeError) showStorageNotice(readingErrorMessage({code: health.writeError}));
+  else $('#storage-notice').hidden = true;
+}
+function reportReadingError(error) {
+  const message = readingErrorMessage(error);
+  statusEl.classList.add('is-alert');
+  statusEl.textContent = message;
+  if (error?.code?.startsWith('storage-')) showStorageNotice(message);
+  announce(message);
+}
+function readingErrorMessage(error) {
+  if (error?.code === 'storage-recovery') return 'Kayıtların yedeği alınamadı. Kurtarma kopyasını indirip cihazında yer açtıktan sonra tekrar dene.';
+  if (error?.code === 'storage-full' || error?.name === 'QuotaExceededError') return 'Cihazın depolama alanı dolu. Yer açtıktan sonra tekrar dene; mevcut okumaların korundu.';
+  if (error?.code === 'storage-unavailable') return 'Okuma bu cihazda kaydedilemedi. Tarayıcının depolama iznini kontrol edip tekrar dene.';
+  return 'Okuma tamamlanamadı. Tekrar dene.';
+}
 
 // Soru, seçenek ve kişi adı metinleri hiçbir event'e girmez.
 const analytics = (window.__tarotEvents = []);
@@ -570,8 +605,10 @@ dialogs.leave.addEventListener('close', async () => {
   if (!state.picks.length && state.readingPromise) {
     const { readingId, existing } = await state.readingPromise.catch(() => ({}));
     if (readingId && !existing) {
-      await service.abandon(readingId);
-      track('reading_abandoned', { spreadId: state.spreadId, lastStep: STEP_NUMBER[state.step] });
+      try {
+        await service.abandon(readingId);
+        track('reading_abandoned', { spreadId: state.spreadId, lastStep: STEP_NUMBER[state.step] });
+      } catch (error) { reportReadingError(error); }
     }
   }
   resetReading();
@@ -593,6 +630,7 @@ RENDERERS.intent = async (_options, from) => {
   bindIntent();
   const [draft, daily] = await Promise.all([service.draft(), service.dailyToday()]);
   if (token !== state.renderToken) return;
+  updateStorageNotice();
   if (draft || (daily && daily.status === 'complete')) {
     body.classList.add('no-enter');
     body.innerHTML = intentMarkup(draft, daily);
@@ -738,7 +776,7 @@ body.addEventListener('click', (event) => {
     return service.get(id).then((r) => service.abandon(id).then(() => {
       track('reading_abandoned', { spreadId: r.spreadId, lastStep: r.status === 'revealing' ? STEP_NUMBER.reveal : STEP_NUMBER.pick });
       target.closest('.draft-banner').remove();
-    }));
+    })).catch(reportReadingError);
   }
   return undefined;
 });
@@ -818,8 +856,9 @@ RENDERERS.confirm = () => {
         <div class="map-focus" id="map-focus" aria-hidden="true"></div>
       </div>
       ${decision ? `<div class="decision-options" role="group" aria-label="Karşılaştırılacak iki seçenek">
-        <label class="field"><span>A seçeneği</span><input id="optionA" maxlength="${SPREADS.LIMITS.option}" autocomplete="off" value="${esc(state.inputs.optionA)}" placeholder="İlk seçenek"></label>
-        <label class="field"><span>B seçeneği</span><input id="optionB" maxlength="${SPREADS.LIMITS.option}" autocomplete="off" value="${esc(state.inputs.optionB)}" placeholder="İkinci seçenek"></label>
+        <label class="field"><span>A seçeneği</span><input id="optionA" required aria-describedby="decision-help" maxlength="${SPREADS.LIMITS.option}" autocomplete="off" value="${esc(state.inputs.optionA)}" placeholder="İlk seçenek"></label>
+        <label class="field"><span>B seçeneği</span><input id="optionB" required aria-describedby="decision-help" maxlength="${SPREADS.LIMITS.option}" autocomplete="off" value="${esc(state.inputs.optionB)}" placeholder="İkinci seçenek"></label>
+        <p id="decision-help" class="field-help">Devam etmek için iki seçeneği de yaz.</p>
       </div>` : ''}
     </div>`;
   bindSpreadMap();
@@ -1056,7 +1095,8 @@ function bindShuffleDeck(deck) {
   const start = () => {
     if (state.busy || rig.holding) return;
     if (reduced()) { autoShuffle(); return; }
-    ensureReading();
+    const token = state.renderToken;
+    ensureReading().catch((error) => shuffleFailed(error, token));
     rig.holding = true;
     rig.startedAt = rig.startedAt || performance.now();
     deck.classList.add('is-shuffling');
@@ -1112,14 +1152,16 @@ async function autoShuffle() {
   if (state.busy) return undefined;
   state.busy = true;
   const token = state.renderToken;
-  ensureReading();
   const rig = shuffleRig;
   const deck = $('#deck');
   primaryBtn.disabled = true;
+  try {
+  await ensureReading();
+  if (token !== state.renderToken) return undefined;
   if (reduced() || !rig) {
     await animate(deck, [{ opacity: 1 }, { opacity: 0 }], { duration: 400, easing: 'ease-in-out', fill: 'forwards' });
     if (token !== state.renderToken) return undefined;
-    return finishShuffle('auto', 400);
+    return await finishShuffle('auto', 400);
   }
   const at = performance.now();
   deck.classList.add('is-shuffling');
@@ -1130,7 +1172,23 @@ async function autoShuffle() {
   sfx.riffleStop();
   deck.classList.remove('is-shuffling');
   if (token !== state.renderToken) return undefined;
-  return finishShuffle('auto', performance.now() - at);
+  return await finishShuffle('auto', performance.now() - at);
+  } catch (error) {
+    shuffleFailed(error, token);
+    return undefined;
+  }
+}
+
+function shuffleFailed(error, token) {
+  if (token !== state.renderToken) return;
+  state.busy = false;
+  state.readingPromise = null;
+  sfx.riffleStop();
+  if (shuffleRig) { shuffleRig.holding = false; shuffleRig.shuffler.release(); }
+  $('#deck')?.classList.remove('is-shuffling');
+  statusEl.textContent = readingErrorMessage(error);
+  primaryBtn.disabled = false;
+  updateStorageNotice();
 }
 
 async function finishShuffle(mode, durationMs) {
@@ -1145,12 +1203,10 @@ async function finishShuffle(mode, durationMs) {
     state.reading = reading;
     state.picks = reading.cards.map(pickFromStored);
     state.busy = false;
+    updateStorageNotice();
     go('pick');
   } catch (error) {
-    state.busy = false;
-    state.readingPromise = null;
-    statusEl.textContent = 'Bağlantı koptu, tekrar dene';
-    primaryBtn.disabled = false;
+    shuffleFailed(error, token);
   }
 }
 
@@ -1337,6 +1393,7 @@ function onFanKey(event) {
   buttons.forEach((b) => { b.tabIndex = -1; });
   next.tabIndex = 0;
   next.focus({ preventScroll: true });
+  scrollFanTo(next);
 }
 
 function selectFanCard(fanIndex) {
@@ -1373,26 +1430,28 @@ function requestPick(pick, pickIndex) {
   state.pickChain = state.pickChain.catch(() => {}).then(task);
   return state.pickChain.then((result) => {
     Object.assign(pick, { card: result.card, reversed: result.reversed, pending: false, failed: false });
+    updateStorageNotice();
     pick.ready = preload(result.card.image);
     const slot = slotEl(pick.positionKey);
     if (slot) setSlotCard(slot, pick);
     if (state.step === 'pick' && !state.picks.some((p) => p.failed)) { statusEl.textContent = PICK_HINT; statusEl.classList.remove('is-alert'); }
     if (state.step === 'reveal') updateReveal();
-  }).catch(() => {
+  }).catch((error) => {
     pick.failed = true;
-    statusEl.classList.add('is-alert');
-    statusEl.textContent = 'Bağlantı koptu, tekrar dene';
+    reportReadingError(error);
     secondaryBtn.hidden = false;
     secondaryBtn.textContent = 'Tekrar dene';
     secondaryBtn.onclick = retryFailedPicks;
   });
 }
 
-function retryFailedPicks() {
+async function retryFailedPicks() {
   secondaryBtn.hidden = true;
   statusEl.classList.remove('is-alert');
   statusEl.textContent = PICK_HINT;
   state.picks.forEach((pick, i) => { if (pick.failed) pick.request = requestPick(pick, i); });
+  await Promise.all(state.picks.map(pick => pick.request));
+  if (state.picks.length === currentSpread().cardCount && !state.picks.some(pick => pick.failed)) finishPicking();
 }
 
 function slotEl(key) {
@@ -1445,7 +1504,22 @@ async function finishPicking() {
   state.finishing = true;
   await Promise.all(state.picks.map((p) => p.request));
   if (state.picks.some((p) => p.failed)) { state.finishing = false; return; }
-  state.interpretationPromise = service.complete(state.readingId);
+  const token = state.renderToken;
+  try {
+    const interpretation = await service.complete(state.readingId);
+    if (token !== state.renderToken) { state.finishing = false; return; }
+    state.interpretationPromise = Promise.resolve(interpretation);
+    updateStorageNotice();
+  } catch (error) {
+    state.finishing = false;
+    state.interpretationPromise = null;
+    if (token !== state.renderToken) return;
+    reportReadingError(error);
+    secondaryBtn.hidden = false;
+    secondaryBtn.textContent = 'Tekrar dene';
+    secondaryBtn.onclick = finishPicking;
+    return;
+  }
   const fan = $('#fan-viewport');
   if (fan && !reduced()) {
     const motion = spring(260, 30);
@@ -1490,7 +1564,6 @@ RENDERERS.reveal = (options) => {
     renderLayout($('#layout'), spread, 'reveal');
   }
   if (usesLegend(spread)) mountLegend($('#layout'), spread);
-  if (!state.interpretationPromise) state.interpretationPromise = service.complete(state.readingId);
   updateReveal();
 };
 
@@ -1610,6 +1683,7 @@ function renderSrList() {
 }
 
 async function revealCard(key, mode) {
+  const token = state.renderToken;
   const spread = currentSpread();
   const pick = state.picks.find((p) => p.positionKey === key);
   if (!pick || state.revealed.has(key) || state.revealing.has(key)) return;
@@ -1618,9 +1692,19 @@ async function revealCard(key, mode) {
   if (!pick.card) { state.revealing.delete(key); return; }
   await pick.ready;
   const slot = slotEl(key);
-  if (!slot) return;
+  if (!slot || token !== state.renderToken) { state.revealing.delete(key); return; }
   setSlotCard(slot, pick);
-  service.reveal(state.readingId, key);
+  try { await service.reveal(state.readingId, key); }
+  catch (error) {
+    state.revealing.delete(key);
+    if (token !== state.renderToken) return;
+    reportReadingError(error);
+    secondaryBtn.hidden = false;
+    return;
+  }
+  if (token !== state.renderToken) { state.revealing.delete(key); return; }
+  statusEl.classList.remove('is-alert');
+  updateStorageNotice();
   track('card_revealed', { spreadId: spread.id, positionKey: key, reversed: pick.reversed, mode });
   const flip = $('.card-flip', slot);
   const turn = $('.card-turn', slot);
@@ -1921,15 +2005,30 @@ RENDERERS.reading = async (options = {}) => {
     if (options.turnBefore) turnFrom(layout, options.turnBefore, motion);
     MOTION.enter([$('#story')], { x: 28, y: 0, blur: 0, duration: 800, delay: 280 });
   }
-  const interpretation = await (state.interpretationPromise || service.complete(state.readingId));
-  const viewed = state.viewOnly ? state.reading : await service.markViewed(state.readingId);
+  let interpretation, viewed;
+  try {
+    interpretation = await (state.interpretationPromise || service.complete(state.readingId));
+    viewed = state.viewOnly ? state.reading : await service.markViewed(state.readingId);
+  } catch (error) {
+    if (token !== state.renderToken) return;
+    state.interpretationPromise = null;
+    $('#story').setAttribute('aria-busy', 'false');
+    $('#story-viewport').innerHTML = `<div class="story-page is-current"><div class="story-inner"><p role="alert">${esc(readingErrorMessage(error))}</p><button type="button" class="btn btn-outline" id="reading-retry">Tekrar dene</button></div></div>`;
+    $('#reading-retry').onclick = () => go('reading');
+    reportReadingError(error);
+    return;
+  }
   if (token !== state.renderToken) return;
   state.reading = viewed;
+  state.interpretationPromise = Promise.resolve(interpretation);
+  updateStorageNotice();
   if (!state.viewOnly) {
     track('reading_viewed', { spreadId: spread.id, msFromStart: Math.round(performance.now() - (state.startedAt || performance.now())), interpretationSource: interpretation.source });
   }
   buildStory(viewed, spread, interpretation);
-  fillClosing(viewed, spread, interpretation, token);
+  fillClosing(viewed, spread, interpretation, token).catch(error => {
+    if (token === state.renderToken) reportReadingError(error);
+  });
 };
 
 function headingMeta(reading) {
@@ -2032,7 +2131,7 @@ function finishPage(spread) {
   const page = document.createElement('section');
   page.className = 'story-page story-finish';
   page.hidden = true;
-  const reminder = daily ? `<label class="toggle-row"><span><strong>Her sabah hatırlat</strong><small>Saat ${esc(settings.reminderTime)} · Ayarlar'dan değiştirebilirsin.</small></span><input type="checkbox" role="switch" id="reminder-toggle"${settings.reminder ? ' checked' : ''}></label>` : '';
+  const reminder = daily ? `<div class="toggle-row calendar-reminder"><span><strong>Günlük hatırlatma</strong><small>Saat ${esc(settings.reminderTime)} · Takviminde kaydet.</small></span><button type="button" class="link-button" id="reminder-calendar">Takvime ekle</button></div>` : '';
   const primaryAction = `<button type="button" class="btn btn-main" id="reading-new">${RENEW_MARK} ${daily ? 'Yeni kart çek' : 'Yeni okuma'}</button>`;
   page.innerHTML = `<div class="story-inner finish-inner">
       <div class="finish-copy"><span class="finish-mark" aria-hidden="true">✦</span><p class="eyebrow">SON BÖLÜM</p><h2 class="finish-title">Yorumun tamamlandı.</h2></div>
@@ -2209,6 +2308,7 @@ function paintFocusCard(chapter) {
   const pick = chapter.kind === 'card' && currentSpread().cardCount > 1 ? state.picks.find((p) => p.positionKey === chapter.key) : null;
   let holder = $('.focus-card', visual);
   visual.classList.toggle('has-focus-card', Boolean(pick && pick.card));
+  syncReadingFocus();
   if (!pick || !pick.card) return;
   if (!holder) {
     holder = document.createElement('button');
@@ -2224,7 +2324,26 @@ function paintFocusCard(chapter) {
   holder.dataset.reversed = String(pick.reversed);
   holder.setAttribute('aria-label', `${pick.card.name}${pick.reversed ? ', ters' : ''} kartını büyüt`);
   holder.innerHTML = `<img src="${esc(pick.card.image)}" alt=""${pick.reversed ? ' class="is-reversed"' : ''}>`;
+  syncReadingFocus();
   MOTION.enter([holder.firstElementChild], { y: 14, scale: 0.93, duration: 640, delay: 60 });
+}
+
+function syncReadingFocus() {
+  const visual = $('.reading-visual');
+  const map = $('.reading-stage', visual || document);
+  if (!visual || !map) return;
+  // The focused-card view disables pointer input on the map on desktop too;
+  // its miniature overview must leave the keyboard order until overview returns.
+  const covered = visual.classList.contains('has-focus-card');
+  if (covered && map.contains(document.activeElement)) $('#story-next')?.focus({ preventScroll: true });
+  map.inert = covered;
+  const holder = $('.focus-card', visual);
+  if (holder) {
+    const visible = visual.classList.contains('has-focus-card');
+    if (!visible && holder.contains(document.activeElement)) $('#story-next')?.focus({ preventScroll: true });
+    holder.inert = !visible;
+    holder.hidden = !visible;
+  }
 }
 
 function updateStoryNav() {
@@ -2351,6 +2470,18 @@ function bindWheelSteps(el, onStep, { threshold = 40 } = {}) {
   let quiet = 0;
   el.addEventListener('wheel', (event) => {
     if (event.target.closest('textarea') || event.ctrlKey) return;
+    if (Math.abs(event.deltaY) >= Math.abs(event.deltaX)) {
+      for (let node = event.target; node && node !== el; node = node.parentElement) {
+        const overflow = getComputedStyle(node).overflowY;
+        if (!['auto', 'scroll'].includes(overflow) || node.scrollHeight <= node.clientHeight + 1) continue;
+        const canScroll = event.deltaY > 0 ? node.scrollTop + node.clientHeight < node.scrollHeight - 1 : node.scrollTop > 0;
+        if (canScroll) {
+          sum = 0; locked = true; clearTimeout(quiet);
+          quiet = setTimeout(() => { locked = false; sum = 0; }, 220);
+          return;
+        }
+      }
+    }
     event.preventDefault();
     clearTimeout(quiet);
     quiet = setTimeout(() => { locked = false; sum = 0; }, 220);
@@ -2395,7 +2526,11 @@ async function fillClosing(reading, spread, interpretation, token) {
   interpretation.closing = draft;
   interpretation.closingSource = 'template';
   interpretation.closingVoice = ORACLE.VOICE;
-  await service.saveClosing(reading.id, draft, 'template');
+  const persist = async (text, source) => {
+    try { await service.saveClosing(reading.id, text, source); if (token === state.renderToken) updateStorageNotice(); }
+    catch (error) { if (token === state.renderToken) reportReadingError(error); }
+  };
+  await persist(draft, 'template');
   if (token !== state.renderToken) return;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 25000);
@@ -2407,13 +2542,13 @@ async function fillClosing(reading, spread, interpretation, token) {
     interpretation.closing = text.trim();
     interpretation.closingSource = 'llm';
     setClosingText(interpretation.closing, token);
-    await service.saveClosing(reading.id, interpretation.closing, 'llm');
+    await persist(interpretation.closing, 'llm');
   } catch (error) {
     if (token !== state.renderToken) return;
     interpretation.closing = draft;
     interpretation.closingSource = 'template';
     setClosingText(draft, token);
-    await service.saveClosing(reading.id, draft, 'template');
+    await persist(draft, 'template');
   } finally {
     clearTimeout(timer);
   }
@@ -2422,15 +2557,19 @@ async function fillClosing(reading, spread, interpretation, token) {
 function bindReading() {
   $('#reading-share').addEventListener('click', shareReading);
   $('#reading-new').addEventListener('click', startNewReading);
-  const reminder = $('#reminder-toggle');
-  if (reminder) {
-    reminder.addEventListener('change', () => {
-      settings.reminder = reminder.checked;
-      saveSettings();
-      track('daily_reminder_toggled', { enabled: reminder.checked });
-      if (reminder.checked && window.Notification && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
-    });
-  }
+  $('#reminder-calendar')?.addEventListener('click', () => downloadReminder($('#reading-status')));
+}
+
+function downloadReminder(status) {
+  try {
+    const content = window.TAROT_REMINDER.calendar({ time: settings.reminderTime, url: location.origin + '/' });
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/calendar;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url; link.download = 'miloruna-gunluk-hatirlatma.ics'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    status.textContent = 'Dosyayı takviminde açıp etkinliği kaydet. Bildirim saatini takviminden değiştirebilirsin.';
+    track('daily_calendar_downloaded');
+  } catch (error) { status.textContent = error.message; }
 }
 
 async function openSavedReading(reading) {
@@ -2441,7 +2580,6 @@ async function openSavedReading(reading) {
   state.viewOnly = reading.status === 'complete';
   state.picks = reading.cards.map(pickFromStored);
   state.revealed = new Set(reading.cards.map((c) => c.positionKey));
-  state.interpretationPromise = service.complete(reading.id);
   return go('reading');
 }
 
@@ -2459,7 +2597,6 @@ async function resumeReading(reading) {
   state.revealed = new Set(reading.cards.filter((c) => c.revealedAt).map((c) => c.positionKey));
   state.startedAt = performance.now();
   if (state.picks.length < spread.cardCount) return go('pick');
-  state.interpretationPromise = service.complete(reading.id);
   return go('reveal');
 }
 
@@ -2668,7 +2805,13 @@ async function storyImage(reading, spread, interpretation, withFaces) {
   ctx.fillStyle = '#b7b4be';
   ctx.fillText(new Date(reading.completedAt || reading.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }), 540, 380);
 
-  const geo = geometry(spread, 900, 820, 'share', false);
+  // The exported image uses a numbered grid for the ten-card spread so the
+  // crossing card and its label remain visible alongside every other card.
+  let geo = geometry(spread, 900, 820, 'share', false);
+  if (spread.id === 'celtic') {
+    const grid = UI.stripLayout(spread.cardCount, {width:900, height:820, ratio:CARD_RATIO, maxCard:170, gapX:0.16, labelH:60, labelMin:150, rowGap:28, cols:[5]});
+    geo = {...grid, slots: spread.positions.map((position, i) => ({...grid.slots[i], position, key:position.key, rot:0}))};
+  }
   const byKey = Object.fromEntries(reading.cards.map((c) => [c.positionKey, c]));
   const faces = withFaces ? await Promise.all(spread.positions.map((p) => loadImage(TAROT.getCard(byKey[p.key].cardId).image))) : [];
   const back = withFaces ? null : await loadImage('assets/night/card-back.webp').catch(() => null);
@@ -2697,7 +2840,7 @@ async function storyImage(reading, spread, interpretation, withFaces) {
       ctx.fillText(card.nameTr + (drawn.reversed ? ' (Ters)' : ''), cx, cy + geo.ch / 2 + 32, geo.cellW);
       ctx.fillStyle = '#b7b4be';
       ctx.font = `400 ${Math.max(14, Math.round(geo.cw / 8))}px ${UI_FONT}`;
-      ctx.fillText(ENGINE.displayLabel(s.position, reading), cx, cy + geo.ch / 2 + 58, geo.cellW);
+      ctx.fillText((spread.id === 'celtic' ? s.position.index + ' · ' : '') + ENGINE.displayLabel(s.position, reading), cx, cy + geo.ch / 2 + 58, geo.cellW);
     }
   });
   ctx.textAlign = 'left';
@@ -3197,6 +3340,7 @@ $('#settings-form').addEventListener('change', (event) => {
   saveSettings();
   applyMotion();
 });
+$('#settings-reminder').addEventListener('click', () => downloadReminder($('#calendar-status')));
 
 $('#open-guide').addEventListener('click', () => {
   if (stage.dataset.view === 'guide') return;
@@ -3273,6 +3417,7 @@ Object.values(dialogs).forEach((dialog) => dialog.addEventListener('click', (eve
 let resizeRaf = 0;
 let lastMobile = isMobile();
 function resizeLayout() {
+  syncReadingFocus();
   setActiveNav(stage.dataset.view, true);
   if (stage.dataset.view === 'guide') { measureDeck(); paintDeck(); return; }
   if (stage.dataset.view === 'history') { paginateHistory({ animate: false }); return; }
@@ -3314,3 +3459,12 @@ resizeLayout();
 document.fonts?.ready.then(() => setActiveNav(stage.dataset.view, true));
 history.replaceState({ kd: 'base' }, '');
 go('intent', { focus: false });
+
+$('#storage-export').addEventListener('click', () => {
+  const raw = service.recoveryBackup();
+  if (raw === null || raw === undefined) return;
+  const url = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url; link.download = 'miloruna-kurtarma.json'; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});

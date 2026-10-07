@@ -31,7 +31,6 @@ test('the closing brief carries the question, the seats and the bans', () => {
   assert.match(essay, /Hangisi bana daha çok benziyor/);
   assert.match(essay, /hangisini seçmen gerektiğini söylemez/);
   assert.equal(oracle.MODEL, 'deepseek-ai/deepseek-v4.1-flash');
-  assert.equal(oracle.ENDPOINT, 'http://127.0.0.1:18791/closing');
 });
 
 test('the template closing tells the spread as a story and ends with the cards\' questions', () => {
@@ -194,7 +193,7 @@ test('a repeated model closing is retried with a new focus', async () => {
   const requests = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (_url, options) => {
-    requests.push(JSON.parse(options.body).user);
+    requests.push(JSON.parse(options.body).attempt);
     return new Response(JSON.stringify({ delta: requests.length === 1 ? nearRepeat : fresh }) + '\n');
   };
   try {
