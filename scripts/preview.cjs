@@ -4,7 +4,7 @@ const {promisify} = require('node:util');
 const config = require('../vercel.json');
 const {createHandler} = require('../server/oracle-handler.js');
 const gzip = promisify(zlib.gzip), brotli = promisify(zlib.brotliCompress);
-const types = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.webp':'image/webp','.png':'image/png','.jpg':'image/jpeg','.woff':'font/woff','.woff2':'font/woff2'};
+const types = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.webp':'image/webp','.png':'image/png','.ico':'image/x-icon','.jpg':'image/jpeg','.woff':'font/woff','.woff2':'font/woff2'};
 function createServer({root = path.resolve(__dirname,'../dist'), handler = createHandler()} = {}) {
   return http.createServer(async(req,res) => {
     for (const header of config.headers[0].headers) res.setHeader(header.key,header.value);

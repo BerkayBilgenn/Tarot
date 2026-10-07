@@ -1,6 +1,6 @@
 'use strict';
 const fs = require('node:fs'), path = require('node:path');
-const FILES = ['index.html','night.tokens.css','night.css','night.motion.css','cards.js','spreads.js','ui-helpers.js','motion.js','shuffle.js','card-notes.js','yorum-motoru.js','reading.js','oracle.js','reminder.js','app.js'];
+const FILES = ['index.html','favicon.png','favicon.ico','night.tokens.css','night.css','night.motion.css','cards.js','spreads.js','ui-helpers.js','motion.js','shuffle.js','card-notes.js','yorum-motoru.js','reading.js','oracle.js','reminder.js','app.js'];
 const ASSET_DIRS = ['brand','cards','fonts','night'];
 const ASSET_TYPES = new Set(['.svg','.webp','.png','.jpg','.jpeg','.woff','.woff2']);
 function publicAsset(file) {
