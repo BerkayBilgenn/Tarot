@@ -1,4 +1,4 @@
-# Miloruna yayın adayı — doğrulama
+# Miloruna canlı yayın — doğrulama
 
 Tarih: 7 Ekim 2026. Temel sürüm: `14f222dd036b7d83edddfb03b21884d0d2cc70da`. Çalışma dalı: `codex/production-readiness-2026-10-07`.
 
@@ -6,7 +6,7 @@ Ana daldaki `07fac70` PNG/ICO favicon güncellemesi de yayın adayına alındı.
 
 ## Sonuç
 
-İncelemede doğrulanan uygulama hataları giderildi. Yerel yorumla çalışan, test edilmiş yayın adayı hazırlandı. Canlı yayın yapılmadı. Gerçek AI hizmeti, hosting ayarları ve fiziksel cihaz testleri aşağıdaki kapsam sınırlarıyla ayrı değerlendirilmelidir.
+İncelemede doğrulanan uygulama hataları giderildi. Kullanıcının yayın talimatıyla 7 Ekim 2026'da [www.miloruna.com](https://www.miloruna.com) adresine yayınlandı. Hazırlık sürümü `dpl_24m1XJF4Rp7kkYhSCBwLtFRbqdp4` bulutta kontrol edildikten sonra ana adrese geçirildi. Canlı site yerel tarot yorumlarıyla çalışıyor; hosting'de NVIDIA bağlantı bilgisi bulunmuyor. Gerçek AI hizmeti ve fiziksel cihaz testleri aşağıdaki kapsam sınırlarıyla ayrı değerlendirilmelidir.
 
 ## Değişiklikler
 
@@ -35,6 +35,9 @@ Ana daldaki `07fac70` PNG/ICO favicon güncellemesi de yayın adayına alındı.
 | Takvim/yedek/AI fallback/paylaşım çıktıları | Chromium **10/10**, WebKit **10/10** |
 | Animasyonlar açık akışlar | **6/6 geçti**; 390×844, 1440×900, 568×320; üç ve on kart açılımları; 169 yorum sayfası |
 | Build, sözdizimi ve fark biçimi | Geçti; CSP inline kod özeti eşleşti, yayın çıktısında özel dosya bulunmadı |
+| Bulutta hazırlık adresi | **10/10 akış**; 113/113 yayın dosyası birebir eşleşti; 12 HTTP/API kontrolü geçti |
+| Herkese açık canlı alan adı | Chromium **10/10**, WebKit **10/10**; toplam 369 yorum sayfası; uygulama/ağ hatası **0** |
+| Canlı dosyalar ve sunucu | **113/113** dosya test edilen sürümle SHA-256 eşleşti; güvenlik/önbellek başlıkları, altı özel dosya yolunun 404 olması ve beş gerçek API yanıtı doğrulandı |
 
 Tam turda uygulama hatası ve beklenmedik ağ hatası **0**. Odaklı tarayıcı turlarında da uygulama hatası **0**. AI yapılandırılmadığında beklenen 503 cevabı, hata dönüşü testi kapsamında yerel yorumla tamamlandı.
 
@@ -56,12 +59,13 @@ Yerel hızlı ölçüm LCP: 0,320 sn. Yavaş profildeki yaklaşık 3,69 sn sonuc
 
 ## Canlı yayın ve doğrulanmamış alanlar
 
-- Vercel yayını yapılmadı; yapılandırma yerelde build ve HTTP testlerinden geçti. Önceki deployment adresi giriş sayfasına yönlendiği için herkese açık canlı akış doğrulanmış değil.
-- NVIDIA'ya gerçek istek yapılmadı. Başarılı ve başarısız sağlayıcı cevapları kontrollü test verileriyle sınandı. Canlı AI için hosting'de `NVIDIA_API_KEY` ve erişilebilir `NVIDIA_MODEL` tanımlanmalı; toplam trafik/maliyet için hosting firewall ve sağlayıcı bütçe sınırı da ayarlanmalı. İşlev içindeki IP sınırı örnek başınadır, dağıtık global sınır değildir.
+- Vercel projesi `berkaybilgenn/taroot`, Node.js 24. Canlı alan adı giriş gerektirmeden açılıyor. Gerçek kullanıcı etkileşimleriyle altı açılım telefon ölçüsünde, on kart açılımı masaüstünde; kart rehberi, geçmiş, ayarlar ve klavye erişimi 320×568/1440×900 ölçülerinde iki motorda sınandı. İndirilen hatırlatma dosyası doğru canlı adresi, seçilen saati, günlük yinelemeyi ve alarmı içeriyor.
+- Gerçek serverless işlevinin GET için 405, yanlış köken için 403, bozuk açılım için 400, büyük gövde için 413 ve ayarsız AI için 503 cevabı canlıda doğrulandı. Ortam dosyaları, proxy, test, doküman ve sunucu kaynak yolu dışarıdan 404 dönüyor. Bulutta çıkan dosyalar yerel test edilmiş sürümle birebir aynı.
+- NVIDIA'ya gerçek istek yapılmadı. Production ortamında AI değişkeni yok; yerel yorumla tamamlanma gerçek canlı işlevin 503 cevabıyla sınandı. Başarılı/başarısız sağlayıcı cevapları ayrıca kontrollü test verileriyle sınandı. Canlı AI için hosting'de `NVIDIA_API_KEY` ve erişilebilir `NVIDIA_MODEL` tanımlanmalı; toplam trafik/maliyet için hosting firewall ve sağlayıcı bütçe sınırı da ayarlanmalı. İşlev içindeki IP sınırı örnek başınadır, dağıtık global sınır değildir.
 - Fiziksel iPhone/Android cihazları, sistem paylaşım menüsünün gerçek tamamlanması, takvim uygulamasına gerçek içe aktarma ve arka plan bildirimi doğrulanmadı. Paylaşım dosyası ve native paylaşım API'sine verilen dosya iki motorda sınandı; native API testi kontrollü bir yerine koyma kullanır.
 - WebKit, Safari motoru kapsamı sağlar; bu fiziksel iOS Safari testi değildir. Firefox iki açılış denemesinde macOS sandbox/ekran oluşturma hatasıyla başlayamadı. Firefox sonucu **doğrulanmadı**, başarılı sayılmadı.
 - Bağımsız kod incelemesi depolama eksiklerini belirledi; bu bulgular giderilip test edildi. İnceleme kullanım sınırı nedeniyle kısmen tamamlandı; son kaynak incelemesi ana ajan tarafından yürütüldü.
 
 ## Kanıt dosyaları
 
-Proje çalışma alanındaki `design-plans/production-results/` klasöründe `unit-tests.txt`, `full-chromium/responsive-report.json`, `regression-*.json`, `storage-*.json`, `artifacts-*.json`, `motion/report.json`, `performance.json`, paylaşım görselleri, takvim dosyaları ve yayın dosyalarının SHA-256 manifesti bulunur. Yayın kurulumu `PRODUCTION.md` içinde açıklanır.
+Proje çalışma alanındaki `design-plans/production-results/` klasöründe `unit-tests.txt`, `full-chromium/responsive-report.json`, `regression-*.json`, `storage-*.json`, `artifacts-*.json`, `motion/report.json`, `performance.json`, paylaşım görselleri, takvim dosyaları ve yayın dosyalarının SHA-256 manifesti bulunur. Canlı yayın kanıtları `staged-deployment.json`, `promotion.txt`, `staged-hosting.json`, `live-hosting.json`, `live-chromium/report.json`, `live-webkit/report.json` ve bu klasörlerdeki ekran görüntüleridir. Yayın kurulumu `PRODUCTION.md` içinde açıklanır.

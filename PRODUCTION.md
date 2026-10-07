@@ -1,6 +1,6 @@
 # Miloruna yayın kurulumu
 
-Bu branch bir yayın adayıdır; canlıya otomatik gönderilmez. Node.js 24 kullanır, uygulama ve sunucu için ek paket gerektirmez.
+Bu sürüm 7 Ekim 2026'da [www.miloruna.com](https://www.miloruna.com) adresinde yayınlandı ve herkese açık adreste doğrulandı. Node.js 24 kullanır, uygulama ve sunucu için ek paket gerektirmez.
 
 ## Çalıştırma
 
@@ -31,7 +31,7 @@ Anahtar frontend'e, Git'e veya yayınlanan varlıklara yazılmaz. Değerler yoks
 
 Sunucu işlevinin 16 KB gövde, 20 saniye upstream timeout ve işlev örneği başına istemci/IP için dakikada 6 istek sınırı vardır. Bu bellek sınırı farklı Vercel örnekleri arasında paylaşılmaz. Canlı AI'yi halka açarken toplam trafik/maliyet sınırını Vercel Firewall ve sağlayıcı bütçesiyle ayrıca yapılandırın; bu branch mevcut hesabın ayarlarını değiştirmez.
 
-Yayın sonrası `/api/closing` için geçerli bir açılımda başarılı model cevabı, anahtarsız hata/fallback, herkese açık ana adres ve temel telefon akışları kontrol edilmelidir. Önceki Vercel deployment adresi giriş sayfasına yönlendiği için canlı etkileşim testi henüz doğrulanmış değildir.
+7 Ekim 2026 yayınında production ortamında AI değişkeni bulunmadığı doğrulandı. Gerçek `/api/closing` işlevinin geçerli açılım için 503 `not-configured` cevabı ve yerel yorumla tamamlanan akışlar canlı adreste sınandı. AI bağlantısı eklendiğinde gerçek sağlayıcı cevabı ve toplam trafik/maliyet sınırı ayrıca doğrulanmalıdır. Hazırlık adresleri hosting giriş koruması kullanabilir; ana alan adı giriş gerektirmeden açıktır.
 
 ## Kayıtlar ve hatırlatma
 
