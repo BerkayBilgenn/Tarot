@@ -1,0 +1,131 @@
+{
+  "method": "Actual daily outputs with no history, all 156 orientations; deterministic mixed 1000 real deck draws with previous history. Counts exclude names/questions and repeat-count additions.",
+  "daily": {
+    "total": 79872,
+    "perOrientation": 512,
+    "orientations": 156,
+    "maxTrials": 6273
+  },
+  "multiStyleSamples": {
+    "three": {
+      "distinct": 2048,
+      "trials": 14344
+    },
+    "relationship": {
+      "distinct": 2048,
+      "trials": 13791
+    },
+    "career": {
+      "distinct": 2048,
+      "trials": 15509
+    },
+    "decision": {
+      "distinct": 2048,
+      "trials": 17232
+    },
+    "celtic": {
+      "distinct": 2048,
+      "trials": 12068
+    }
+  },
+  "sameDailyCard100": {
+    "before": 10,
+    "after": 86
+  },
+  "mixed1000": {
+    "before": {
+      "readings": 1000,
+      "distinctWholeTexts": 1000,
+      "mostCommonOpening": 833,
+      "mostCommonLastSentence": 833,
+      "readingsMissingACard": 0,
+      "words": {
+        "daily": {
+          "min": 69,
+          "median": 79,
+          "max": 117
+        },
+        "three": {
+          "min": 234,
+          "median": 272,
+          "max": 300
+        },
+        "relationship": {
+          "min": 281,
+          "median": 314,
+          "max": 351
+        },
+        "decision": {
+          "min": 285,
+          "median": 322,
+          "max": 362
+        },
+        "career": {
+          "min": 260,
+          "median": 305,
+          "max": 342
+        },
+        "celtic": {
+          "min": 359,
+          "median": 395,
+          "max": 429
+        }
+      }
+    },
+    "after": {
+      "readings": 1000,
+      "distinctWholeTexts": 1000,
+      "mostCommonOpening": 5,
+      "mostCommonLastSentence": 5,
+      "readingsMissingACard": 0,
+      "words": {
+        "daily": {
+          "min": 93,
+          "median": 117,
+          "max": 150
+        },
+        "three": {
+          "min": 187,
+          "median": 220,
+          "max": 255
+        },
+        "relationship": {
+          "min": 246,
+          "median": 328,
+          "max": 375
+        },
+        "decision": {
+          "min": 271,
+          "median": 317,
+          "max": 354
+        },
+        "career": {
+          "min": 255,
+          "median": 322,
+          "max": 365
+        },
+        "celtic": {
+          "min": 365,
+          "median": 440,
+          "max": 508
+        }
+      }
+    }
+  },
+  "orderedCardConfigurations": {
+    "1": "156",
+    "3": "3651648",
+    "5": "81066585600",
+    "10": "4675765217094107136000"
+  },
+  "verifiedDistinctInventoryTexts": 90112,
+  "theoreticalTextCapacityBySpread": {
+    "daily": "79872",
+    "three": "7478575104",
+    "relationship": "166024367308800",
+    "decision": "166024367308800",
+    "career": "166024367308800",
+    "celtic": "9575967164608731414528000"
+  },
+  "theoreticalTotal": "9575967165106811995109376"
+}

@@ -2476,7 +2476,7 @@ function setClosingText(text, token) {
 
 async function fillClosing(reading, spread, interpretation, token) {
   const status=(text)=>{if(token===state.renderToken && $('#oracle-status'))$('#oracle-status').textContent=text;};
-  const saved=UI.generalText(interpretation);
+  const saved=UI.generalText(interpretation,interpretation.closing || '');
   if(saved){setClosingText(saved,token);status('');return;}
   const previous=await service.previousReadings(reading.id);
   const draft=ORACLE.longClosing(reading,spread,TAROT,previous);
@@ -2502,7 +2502,13 @@ async function fillClosing(reading, spread, interpretation, token) {
     await persist(()=>service.saveOracleState(reading.id,interpretation.oracleState));
     interpretation.closing=draft;interpretation.closingSource='template';
     await persist(()=>service.saveClosing(reading.id,draft,'template'));
-    if(token===state.renderToken){setClosingText(draft,token);status('Şu anda temel yorum sunuluyor. Kişisel yorum geçici olarak kullanılamıyor.');updateStorageNotice();}
+    if(token===state.renderToken){
+      setClosingText(draft,token);
+      status(['disabled','not-configured'].includes(code)
+        ? (persistenceError?'Yorum hazır. Bu cihazda kaydedilemedi.':'')
+        : 'Şu anda temel yorum sunuluyor. Kişisel yorum geçici olarak kullanılamıyor.');
+      updateStorageNotice();
+    }
   }
 }
 

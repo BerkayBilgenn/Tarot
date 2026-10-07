@@ -326,6 +326,8 @@
       const spread = spreads.getSpread(reading.spreadId);
       if (reading.cards.length !== spread.cardCount) throw new Error('Önce tüm kartları seç');
       const old = reading.interpretation;
+      // Tamamlanmış okumalar bir kayıt: yeni yazım sürümü eski yorumu yeniden yazmaz.
+      if (reading.status === 'complete' && validInterpretation(old, spread)) return wait(old);
       if (!validInterpretation(old, spread) || old.textVersion !== TEXT_VERSION) {
         const fresh = interpret(reading, spread, cards, priorReadings(list, reading));
         if (old && old.closingSource === 'llm' && typeof old.closing === 'string' && old.closing) Object.assign(fresh, { closing: old.closing, closingSource: 'llm', closingVoice: typeof old.closingVoice === 'string' ? old.closingVoice : undefined });
@@ -403,7 +405,7 @@
       const closing = String(text || '').trim().slice(0, 8000);
       reading.interpretation.closing = closing;
       reading.interpretation.closingSource = source === 'template' ? 'template' : 'llm';
-      reading.interpretation.closingVoice = 'okuma-5';
+      reading.interpretation.closingVoice = 'okuma-6';
       save(list);
       return wait(reading.interpretation);
     }
@@ -677,7 +679,7 @@
   // Her kart için dört parça: kartın anlamı (kart verisinden), bu yerde ne dediği, komşularının etkisi ve
   // soruya bağı. Motorun planı yalnızca belirgin olduğunda ve sade cümleyle söze girer.
 
-  const TEXT_VERSION = 3;
+  const TEXT_VERSION = 4;
 
   function repeatContext(reading, history) {
     const previous = (history || []).filter((item) => item.id !== reading.id && (!reading.userId || !item.userId || item.userId === reading.userId));
@@ -840,7 +842,9 @@
     let seat = seatFor(position, spread, tone)(themes, reading);
     if (drawn.reversed && tone === 'soft') seat += ' Kart ters geldiği için zor yüzü gevşiyor; bu bir rahatlama işareti olabilir.';
     else if (drawn.reversed) seat += ` ${REVERSED_NOTE[position.key] || 'Kart ters geldiği için bu enerji şimdilik tıkalı, gecikmeli ya da içe dönük yaşanıyor olabilir.'}`;
-    const context = contextSentence(ctx, nameOf);
+    const editorial = root.TAROT_NOTES || require('./card-notes.js');
+    const category = editorial.contextOf(card.id, drawn.reversed, spread.id);
+    const context = [category, contextSentence(ctx, nameOf)].filter(Boolean).join(' ');
     const role = position.index === 1 ? 'first' : position.index === spread.positions.length ? 'last' : '';
     const tie = questionSeat(questionLens(reading, spread), role);
     const text = [seat, context, tie].filter(Boolean).join(' ');
