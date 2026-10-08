@@ -11,7 +11,8 @@ function locations(out){return [...fs.readFileSync(path.join(out,'sitemap.xml'),
 function fileFor(out,url){return path.join(out,new URL(url).pathname,'index.html');}
 test('published sitemap includes every real card and spread as a unique readable page',t=>{
   const out=release(t),urls=locations(out);
-  assert.equal(urls.length,99);assert.equal(new Set(urls).size,99);
+  const {CARDS}=require('../cards.js'),{SPREADS}=require('../spreads.js'),{GUIDES}=require('../content/editorial.cjs');
+  assert.equal(urls.length,1+CARDS.length+5+1+SPREADS.length+GUIDES.length+3);assert.equal(new Set(urls).size,urls.length);
   for(const expected of ['https://www.miloruna.com/','https://www.miloruna.com/ask-tarot/','https://www.miloruna.com/kelt-haci-tarot/','https://www.miloruna.com/tarot-kartlari/ay/','https://www.miloruna.com/tarot-kartlari/tilsim-krali/','https://www.miloruna.com/rehber/tarot-nasil-bakilir/'])assert(urls.includes(expected),expected+' missing');
   for(const url of urls){assert.equal(new URL(url).origin,'https://www.miloruna.com');assert.equal(new URL(url).search,'');assert(fs.existsSync(fileFor(out,url)),url+' not built');}
   const moon=fs.readFileSync(path.join(out,'tarot-kartlari/ay/index.html'),'utf8');
@@ -54,4 +55,41 @@ test('robots permits public search and AI discovery while declaring only the can
   assert.match(robots,/Sitemap: https:\/\/www.miloruna.com\/sitemap.xml/);
   assert(!/Disallow: \/\s*(?:\n|$)/.test(robots),'public site blocked');
   assert(!robots.includes('GPTBot'),'training preference altered');
+});
+
+test('expanded guides are reachable, use real reading contexts and link to the card corpus',t=>{
+  const out=release(t),urls=locations(out);
+  for(const slug of ['online-tarot-nasil-calisir','tarot-kartlari-nasil-secilir','tarot-kartlari-nasil-yorumlanir','tarot-kart-kombinasyonlari','uc-kart-tarot-ornekleri','ask-tarot-sorulari','kariyer-tarot-sorulari','tarot-yorumlama-hatalari']){
+    const url='https://www.miloruna.com/rehber/'+slug+'/';assert(urls.includes(url),'missing guide '+slug);
+    const html=fs.readFileSync(fileFor(out,url),'utf8');assert.match(html,/class="answer-lead"/);assert.match(html,/href="\/tarot-kartlari\/[^\"]+\/"/);assert.match(html,/data-reading-link="(?:three|relationship|career|decision)"/);
+    assert(!html.includes('undefined'),'broken editorial reference');
+  }
+});
+test('content update dates remain page-specific and agree between rendered articles schema and sitemap',t=>{
+  const out=release(t),xml=fs.readFileSync(path.join(out,'sitemap.xml'),'utf8');
+  const entries=new Map([...xml.matchAll(/<url><loc>([^<]+)<\/loc><lastmod>([^<]+)<\/lastmod><\/url>/g)].map(m=>[m[1],m[2]]));
+  for(const [route,published,modified] of [['/rehber/tarot-nedir/','2026-10-07','2026-10-08'],['/tarot-kartlari/ay/','2026-10-07','2026-10-08'],['/tarot-kartlari/ermis/','2026-10-07','2026-10-07'],['/rehber/online-tarot-nasil-calisir/','2026-10-08','2026-10-08']]){
+    const url='https://www.miloruna.com'+route;assert.equal(entries.get(url),modified,route);
+    const html=fs.readFileSync(fileFor(out,url),'utf8');const graph=JSON.parse(html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/)[1])['@graph'];const article=graph.find(x=>x['@type']==='Article');assert.equal(article.datePublished,published);assert.equal(article.dateModified,modified);assert(html.includes('datetime="'+modified+'"'));
+  }
+});
+test('brand logo and touch icon are public assets and article schema names a real matching image',t=>{
+  const out=release(t);
+  for(const url of locations(out)){
+    const html=fs.readFileSync(fileFor(out,url),'utf8');assert.match(html,/rel="apple-touch-icon"/);
+    const graph=JSON.parse(html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/)[1])['@graph'];const publisher=graph.find(x=>x['@type']==='Organization');assert.equal(publisher.logo.url,'https://www.miloruna.com/assets/brand/miloruna-logo.png');
+    assert(fs.existsSync(path.join(out,new URL(publisher.logo.url).pathname)));
+    const article=graph.find(x=>x['@type']==='Article');if(article){assert(article.image);assert(fs.existsSync(path.join(out,new URL(article.image).pathname)));}
+  }
+  const home=fs.readFileSync(path.join(out,'index.html'),'utf8');assert.match(home,/Tarotla kendini dinle/);assert.match(home,/Ücretsiz online tarot açılımı/);
+});
+
+test('ten enriched cards retain their meanings and connect concrete examples to real companion cards',t=>{
+  const out=release(t),contexts=require('../content/card-contexts.cjs'),{CARDS}=require('../cards.js');assert.equal(Object.keys(contexts).length,10);
+  for(const [id,context] of Object.entries(contexts)){
+    const card=CARDS.find(card=>card.id===id);assert(card);const slug=require('../scripts/discovery.cjs').slugOf(card.nameTr);
+    const html=fs.readFileSync(path.join(out,'tarot-kartlari',slug,'index.html'),'utf8');assert.match(html,/Düz anlam/);assert.match(html,/Ters anlam/);
+    for(const section of context.sections)assert(html.includes(section.heading));
+    for(const related of context.relatedCards){const linked=CARDS.find(card=>card.id===related);assert(linked);assert(html.includes('/tarot-kartlari/'+require('../scripts/discovery.cjs').slugOf(linked.nameTr)+'/'));}
+  }
 });

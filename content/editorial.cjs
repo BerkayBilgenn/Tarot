@@ -131,4 +131,19 @@ const GUIDES = [
     ],related:['tarot-sorulari','tarot-nasil-bakilir','tarot-nedir'],comparison:true
   }
 ];
-module.exports={REVIEWED,SOURCE,SPREAD_CONTENT,GUIDES};
+const UPDATED = '2026-10-08';
+const {NEW_GUIDES,GUIDE_ADDITIONS} = require('./guide-expansion.cjs');
+const NEW_GUIDE_SLUGS = new Set(NEW_GUIDES.map(guide => guide.slug));
+const NEW_RELATED = {
+  'tarot-nedir':['online-tarot-nasil-calisir','tarot-kartlari-nasil-yorumlanir'],
+  'tarot-nasil-bakilir':['tarot-kartlari-nasil-secilir','uc-kart-tarot-ornekleri'],
+  'tarot-sorulari':['ask-tarot-sorulari','kariyer-tarot-sorulari'],
+  'ters-tarot-kartlari':['tarot-kart-kombinasyonlari','tarot-yorumlama-hatalari'],
+  'tarot-acilimlari':['uc-kart-tarot-ornekleri','tarot-kartlari-nasil-yorumlanir']
+};
+for (const guide of GUIDES) {
+  guide.sections.push(...(GUIDE_ADDITIONS[guide.slug] || []));
+  guide.related = [...new Set([...guide.related, ...NEW_RELATED[guide.slug]])];
+}
+GUIDES.push(...NEW_GUIDES);
+module.exports={REVIEWED,UPDATED,NEW_GUIDE_SLUGS,SOURCE,SPREAD_CONTENT,GUIDES};

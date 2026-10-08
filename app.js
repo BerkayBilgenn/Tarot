@@ -629,7 +629,7 @@ RENDERERS.intent = async (_options, from) => {
   if (from === 'confirm' && state.intentId) selectedIntentId = state.intentId;
   const token = state.renderToken;
   resetReading();
-  setHeading('Biraz da kendini dinle.', 'Bir nefes al. Bugün kendine biraz daha yaklaş.');
+  setHeading('Tarotla kendini dinle.', 'Ücretsiz online tarot açılımı. Niyetini seç, kartlarını çek.');
   setProgress('');
   setActions();
   body.innerHTML = intentMarkup(null, null);
