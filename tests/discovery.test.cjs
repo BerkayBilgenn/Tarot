@@ -44,7 +44,9 @@ test('crawlable links and image resources resolve inside the public build withou
     }
   }
   for(const privatePath of ['content','scripts','tests','docs','.env','server/oracle-handler.js'])assert(!fs.existsSync(path.join(out,privatePath)),privatePath+' leaked');
-  const home=fs.readFileSync(path.join(out,'index.html'),'utf8');assert.match(home,/href="\/tarot-kartlari\/"/);assert.match(home,/href="\/rehber\/"/);
+  const home=fs.readFileSync(path.join(out,'index.html'),'utf8');assert.match(home,/<a href="\/rehber\/">Rehber<\/a>/);
+  const directory=fs.readFileSync(path.join(out,'rehber/index.html'),'utf8');assert.match(directory,/href="\/tarot-kartlari\/"/);assert.match(directory,/Ücretsiz online tarot açılımı/);
+  assert(!home.includes('class="discovery-home"'),'editorial directory still occupies the reading homepage');
 });
 test('robots permits public search and AI discovery while declaring only the canonical sitemap',t=>{
   const out=release(t),robots=fs.readFileSync(path.join(out,'robots.txt'),'utf8');

@@ -35,13 +35,12 @@
   <link rel="preload" href="assets/fonts/display-soft.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/night/night-scene.webp" as="image" type="image/webp" fetchpriority="high">
   <link rel="stylesheet" href="night.tokens.css?v=4">
-  <link rel="stylesheet" href="night.css?v=16">
-  <link rel="stylesheet" href="night.motion.css?v=5">
-  <link rel="stylesheet" href="home-discovery.css?v=1">
+  <link rel="stylesheet" href="night.css?v=17">
+  <link rel="stylesheet" href="night.motion.css?v=6">
   <script src="cards.js?v=2" defer></script>
   <script src="spreads.js?v=4" defer></script>
   <script src="ui-helpers.js?v=5" defer></script>
-  <script src="motion.js?v=3" defer></script>
+  <script src="motion.js?v=4" defer></script>
   <script src="shuffle.js?v=2" defer></script>
   <script src="card-notes.js?v=2" defer></script>
   <script src="yorum-motoru.js?v=2" defer></script>
@@ -49,7 +48,7 @@
   <script src="oracle.js?v=16" defer></script>
   <script src="reminder.js?v=1" defer></script>
   <script src="discovery.js?v=1" defer></script>
-  <script src="app.js?v=52" defer></script>
+  <script src="app.js?v=53" defer></script>
 </head>
 <body>
   <div class="scene" id="app" data-step="intent" data-view="home">
@@ -61,8 +60,9 @@
       <nav class="site-nav" aria-label="Ana menü">
         <a class="nav-active" href="#acilim" aria-current="page" data-nav="home" aria-label="Bir açılım yap"><span class="nav-long" aria-hidden="true">Bir açılım yap</span><span class="nav-short" aria-hidden="true">Açılım</span></a>
         <button id="open-guide" type="button" data-nav="guide" aria-label="Kartları tanı"><span class="nav-long" aria-hidden="true">Kartları tanı</span><span class="nav-short" aria-hidden="true">Kartlar</span></button>
-        <button id="open-history" type="button" data-nav="history">Okumalarım</button>
+        <button id="open-history" type="button" data-nav="history" aria-label="Okumalarım"><span class="nav-long" aria-hidden="true">Okumalarım</span><span class="nav-short" aria-hidden="true">Geçmiş</span></button>
         <button id="open-settings" type="button" data-nav="settings">Ayarlar</button>
+        <a href="/rehber/">Rehber</a>
       </nav>
       <a class="moon-mark" href="/rehber/" aria-label="Tarot rehberini aç">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M20.4 14.6A8.5 8.5 0 0 1 9.4 3.6a.6.6 0 0 0-.8-.7A9.5 9.5 0 1 0 21.1 15.4a.6.6 0 0 0-.7-.8Z"/></svg>
@@ -103,17 +103,6 @@
           </button>
           <button class="btn btn-main" type="button" id="primary" hidden></button>
         </div>
-      </section>
-
-      <section class="discovery-home" aria-labelledby="discovery-title">
-        <h2 id="discovery-title">Ücretsiz online tarot açılımı</h2>
-        <p>Miloruna’da niyetini seç, kartlarını kendi elinle çek ve yorumunu oku. Günlük kart, üç kart, aşk, kariyer, karar ve Kelt Haçı açılımları ücretsizdir; üyelik gerektirmez. Kartların sembollerini ve düz ile ters anlamlarını rehberden keşfedebilirsin.</p>
-        <nav aria-label="Tarot açılımları">
-          <a href="/gunluk-tarot/">Günün kartı</a><a href="/uc-kart-tarot/">Üç kart tarot</a><a href="/ask-tarot/">Aşk tarot</a><a href="/kariyer-tarot/">Kariyer tarot</a><a href="/karar-tarot/">Karar tarot</a><a href="/kelt-haci-tarot/">Kelt Haçı</a>
-        </nav>
-        <nav aria-label="Tarot rehberleri"><a href="/tarot-kartlari/">78 tarot kartı ve anlamları</a><a href="/rehber/">Tarot rehberi</a><a href="/rehber/tarot-sorulari/">Tarota ne sorulur?</a></nav>
-        <p>Yorumlar kartların anlamlarını ve açılımdaki konumlarını bir araya getiren sembolik bir okuma sunar. Sorularını ve seçeneklerini kendi deneyiminle birlikte düşünebilirsin.</p>
-        <p class="discovery-small"><a href="/hakkinda/">Miloruna hakkında ve yöntem</a><a href="/gizlilik/">Gizlilik ve veri kullanımı</a></p>
       </section>
 
       <section class="guide-page" id="guide-page" hidden aria-labelledby="guide-title">

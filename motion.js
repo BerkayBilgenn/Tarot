@@ -11,8 +11,7 @@
   // Mum alevinin night-scene.png üzerindeki yeri (görsel 1586 × 992).
   const SCENE = { width: 1586, height: 992, candle: { x: 35, y: 300 } };
   const PARALLAX_ZOOM = 1.025;
-  const EASE_OUT = 'cubic-bezier(.16, 1, .3, 1)';
-  const EASE_IN = 'cubic-bezier(.4, 0, .7, .2)';
+  const EASE_OUT = 'cubic-bezier(.23, 1, .32, 1)';
   const rand = (a, b) => a + Math.random() * (b - a);
 
   function run(el, keyframes, options) {
@@ -192,11 +191,23 @@
   // ---------- Geçişler ----------
 
   // Eski içeriğin bir kopyasını aynı yerde bırakıp söndürür; yeni içerik altından gelir.
-  function ghost(node, { y = -12, duration = 340, into = null } = {}) {
+  let activeGhost = null;
+  const entrances = new WeakMap();
+
+  function ghost(node, { y = -8, duration = 180, into = null } = {}) {
+    if (activeGhost) {
+      activeGhost.getAnimations().forEach((animation) => animation.cancel());
+      activeGhost.remove();
+      activeGhost = null;
+    }
     if (reduced() || !node || !node.isConnected) return null;
     const rect = node.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
     const scrollers = [...node.querySelectorAll('*')].map((el, i) => [i, el.scrollLeft, el.scrollTop]).filter(([, left, top]) => left || top);
+    const visual = getComputedStyle(node);
+    const opacity = visual.opacity;
+    const transform = visual.transform;
+    entrances.get(node)?.cancel();
     const clone = node.cloneNode(true);
     clone.removeAttribute('id');
     clone.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
@@ -207,22 +218,37 @@
     (into || node.closest('.scene') || document.body).append(clone);
     const all = clone.querySelectorAll('*');
     scrollers.forEach(([i, left, top]) => { all[i].scrollLeft = left; all[i].scrollTop = top; });
+    activeGhost = clone;
     run(clone, [
-      { opacity: 1, transform: 'none' },
+      { opacity, transform },
       { opacity: 0, transform: `translateY(${y}px) scale(.985)` }
-    ], { duration, easing: EASE_IN, fill: 'forwards' }).then(() => clone.remove());
+    ], { duration, easing: EASE_OUT, fill: 'forwards' }).then(() => {
+      clone.remove();
+      if (activeGhost === clone) activeGhost = null;
+    });
     return clone;
   }
 
   // Öğeleri sırayla aşağıdan getirir. Büyük kutularda bulanıklık animasyonu her karede yeniden çizim ister;
   // bu yüzden varsayılan olarak yalnızca saydamlık ve konum oynar.
-  function enter(nodes, { x = 0, y = 16, blur = 0, scale = 1, duration = 620, delay = 90, stagger = 60 } = {}) {
-    if (reduced()) return Promise.resolve();
+  function enter(nodes, { x = 0, y = 8, scale = 1, duration = 260, delay = 0, stagger = 35 } = {}) {
     const list = [...nodes].filter(Boolean);
-    return Promise.all(list.map((el, i) => run(el, [
-      { opacity: 0, transform: `translate(${x}px, ${y}px) scale(${scale})`, filter: blur ? `blur(${blur}px)` : 'none' },
-      { opacity: 1, transform: 'none', filter: blur ? 'blur(0)' : 'none' }
-    ], { duration, delay: delay + i * stagger, easing: EASE_OUT, fill: 'backwards' })));
+    return Promise.all(list.map((el, i) => {
+      const previous = entrances.get(el);
+      const current = previous && previous.playState !== 'finished' ? getComputedStyle(el) : null;
+      const start = current
+        ? { opacity: current.opacity, transform: current.transform }
+        : { opacity: 0, transform: `translate(${x}px, ${y}px) scale(${scale})` };
+      previous?.cancel();
+      if (reduced() || !el.animate) return Promise.resolve();
+      const animation = el.animate([start, { opacity: 1, transform: 'none' }], {
+        duration: Math.min(duration, 300), delay: Math.min(delay, 60) + Math.min(i * stagger, 120), easing: EASE_OUT, fill: 'backwards'
+      });
+      entrances.set(el, animation);
+      return animation.finished.catch(() => {}).then(() => {
+        if (entrances.get(el) === animation) { entrances.delete(el); animation.cancel(); }
+      });
+    }));
   }
 
   // Sahne arka planı bir an yaklaşır: masada bir yerden ötekine geçiyormuş gibi. Yalnızca ölçek ve saydamlık.

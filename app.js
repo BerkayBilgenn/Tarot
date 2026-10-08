@@ -249,6 +249,7 @@ function badged(spread, mode) {
   if (spread.id === 'celtic') return ['preview', 'reveal', 'reading'].includes(mode);
   // Seçenek adları uzayabilir; onayda numaralar haritadaki tam adlara bağlanır.
   if (spread.id === 'decision' && mode === 'preview') return true;
+  if (mode === 'preview' && isMobile() && frameFor(spread) === 'row' && spread.cardCount > 1) return true;
   if (spread.id === 'relationship' && mode === 'reveal') return true;
   // Telefonda yorumda kartın altında etiket yoktur; numara rozeti kartı listedeki ve anlatımdaki yerine bağlar.
   if (mode === 'reading' && isMobile()) return spread.cardCount > 1;
@@ -377,7 +378,7 @@ function slotGeometry(spread, width, height, mode, narrow, fit = {}) {
   const contentH = spanY * cellH + ch + labelH;
   const ox = (width - contentW) / 2;
   const oyBase = (height - contentH + badgeRoom) / 2;
-  const oy = rowPreview ? Math.max(4, Math.min(oyBase, 12)) : oyBase;
+  const oy = rowPreview && !isMobile() ? Math.max(4, Math.min(oyBase, 12)) : oyBase;
   const uniform = {
     cw, ch, labelH, cellW, spanY,
     slots: slots.map((s) => ({ ...s, side: 'below', left: Math.round(ox + (s.x - minX) * cellW), top: Math.round(oy + (s.y - minY) * cellH) }))
@@ -552,7 +553,7 @@ function go(step, options = {}) {
   clearConfirmChrome();
   if (step !== 'intent') armHistory();
   const result = RENDERERS[step]({ ...options, flipBefore, turnBefore }, from);
-  if (swap && step !== 'intent') MOTION.enter([body.firstElementChild], { y: 22, blur: 0, duration: 700, delay: 120 });
+  if (swap && step !== 'intent') MOTION.enter([body.firstElementChild], { y: 8, duration: 260, delay: 0 });
   if (options.focus !== false) requestAnimationFrame(() => titleEl.focus({ preventScroll: true }));
   return result;
 }
@@ -2244,9 +2245,9 @@ function retireStoryPage(page, dir) {
   if (reduced()) { done(); return; }
   page.style.pointerEvents = 'none';
   MOTION.run(page, [
-    { opacity: 1, transform: 'none', filter: 'blur(0)' },
-    { opacity: 0, transform: `translateX(${-dir * 36}px)`, filter: 'blur(6px)' }
-  ], { duration: 300, easing: 'cubic-bezier(.4,0,.7,.2)', fill: 'forwards' }).then((animation) => {
+    { opacity: 1, transform: 'none' },
+    { opacity: 0, transform: `translateX(${-dir * 12}px)` }
+  ], { duration: 180, easing: MOTION.EASE_OUT, fill: 'forwards' }).then((animation) => {
     done();
     page.style.pointerEvents = '';
     if (animation && animation.cancel) animation.cancel();
@@ -3118,13 +3119,12 @@ const VIEW_PAGES = { home: '#acilim', guide: '#guide-page', history: '#history-p
 function setView(name) {
   const was = stage.dataset.view;
   const changing = was !== name;
-  if (changing) MOTION.ghost($(VIEW_PAGES[was]), { y: 0, duration: 380 });
+  if (changing) MOTION.ghost($(VIEW_PAGES[was]), { y: 0, duration: 180 });
   stage.dataset.view = name;
   Object.entries(VIEW_PAGES).forEach(([view, selector]) => { $(selector).hidden = view !== name; });
   setActiveNav(name);
   if (changing) {
-    MOTION.sceneBreath(stage);
-    MOTION.enter([$(VIEW_PAGES[name])], { y: 0, scale: 1.015, blur: 0, duration: 760, delay: 60 });
+    MOTION.enter([$(VIEW_PAGES[name])], { y: 0, scale: 1, duration: 260, delay: 0 });
   }
 }
 
