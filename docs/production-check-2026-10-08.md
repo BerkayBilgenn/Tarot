@@ -18,7 +18,20 @@ Bu sürüm, yapay zekasız yorumları kart yönü, kategori, konum ve birlikte g
 
 ## Yayın doğrulaması
 
-Önce ana adrese geçirilmeden üretim adayı hazırlanır. Hazır olduğunda dosyalar derlemeyle karşılaştırılır ve özel dosya yollarının erişilemediği doğrulanır. Kullanıcının yetkilendirdiği GitHub main yayını ve canlı adrese geçiş bundan sonra yapılır; sonuç ayrı yayın kaydına yazılır.
+Yerel yorum sürümü `3b152393ab3cf8a0e5d57f8bdfa27db4449a2d4e` GitHub main üzerinden yayınlandı. GitHub CI ve Vercel production yayını başarılı; canlı sitedeki 228 adres derlemeyle birebir eşleşti. Altı özel dosya yolu 404, yapılandırılmamış AI oturumu 503 ve desteklenmeyen GET isteği 405 döndü. Korumalı aday adres için koruma atlatılmadı; doğrulama herkese açık canlı adreste yapıldı.
+
+## Kaydırma çubukları ve son responsive kontrol
+
+Kullanıcının ekran görüntüsündeki yatay kart çubuğu ve dikey yorum çubuğu kaldırıldı. Kaydırma işlevi korunur; ana akış, kart pencereleri ve yatay telefondaki sayfa da aynı çubuksuz görünümü kullanır. Uzun ve boşluksuz metinler hem sayfalama ölçümünde hem görünür yorumda satıra bölünür. `night.css` önbellek sürümü 16'ya yükseltildi.
+
+- Yorum ekranı: 320×568, 375×667, 390×844, 768×1024, 1024×600, 1366×768, 1440×900 ve 844×390. Yatay sayfa taşması yok; kart ve yorum çubukları gizli. Yatay telefonda alt gezinme düğmesine odaklanınca sayfa kayarak düğmeyi görünür alana getiriyor.
+- Ana sayfa, kart rehberi ve geçmiş: 320×568, 390×844, 768×1024, 1366×768 ve 844×390; yatay sayfa taşması yok. Rehberin kart yelpazesinin kendi alanı dışındaki dekoratif kartları sayfayı genişletmiyor.
+- Kaydedilmiş beş kartlı yorumun 320×568'deki 29 ve 1440×900'deki 4 sayfası okundu. Boşluklar normalize edildiğinde bütün metinler aynı; hiçbir yorum sayfasında yatay veya dikey içerik taşması yok.
+- Gerçek karar formuyla uzun, boşluksuz seçenek denendi. 320×568'deki 47 ve 1440×900'deki 4 sayfanın bütün metni aynı; tam seçenek metni korunuyor ve sayfalarda taşma yok.
+- 320×568'de kariyer kart satırının son kartına Tab ile ulaşıldı; Enter kart ayrıntısını açtı. Kart penceresi çubuksuz, kaydırılabilir ve Escape ile kapanıyor. Günlük okuma kayıtları korunuyor.
+- 165 test başarılı; üretim derlemesi ve değişiklik biçim kontrolü başarılı. Bağımsız son kod incelemesinde kritik veya önemli sorun kalmadı.
+
+Bu düzeltme kullanıcı tarafından yayın için yetkilendirilmiştir. GitHub main ve Vercel yayınının sonucu, yeni sürümün canlı dosya karşılaştırması ve ekran kanıtı çalışma alanının ayrı yayın kaydına yazılır.
 
 ## Sınırlar
 
