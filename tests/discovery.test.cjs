@@ -68,10 +68,33 @@ test('expanded guides are reachable, use real reading contexts and link to the c
 test('content update dates remain page-specific and agree between rendered articles schema and sitemap',t=>{
   const out=release(t),xml=fs.readFileSync(path.join(out,'sitemap.xml'),'utf8');
   const entries=new Map([...xml.matchAll(/<url><loc>([^<]+)<\/loc><lastmod>([^<]+)<\/lastmod><\/url>/g)].map(m=>[m[1],m[2]]));
-  for(const [route,published,modified] of [['/rehber/tarot-nedir/','2026-10-07','2026-10-08'],['/tarot-kartlari/ay/','2026-10-07','2026-10-08'],['/tarot-kartlari/ermis/','2026-10-07','2026-10-07'],['/rehber/online-tarot-nasil-calisir/','2026-10-08','2026-10-08']]){
+  for(const [route,published,modified] of [['/rehber/tarot-nedir/','2026-10-07','2026-10-08'],['/tarot-kartlari/ay/','2026-10-07','2026-10-08'],['/tarot-kartlari/ermis/','2026-10-07','2026-10-07'],['/rehber/online-tarot-nasil-calisir/','2026-10-08','2026-10-13'],['/ask-tarot/','2026-10-07','2026-10-13'],['/kariyer-tarot/','2026-10-07','2026-10-13']]){
     const url='https://www.miloruna.com'+route;assert.equal(entries.get(url),modified,route);
     const html=fs.readFileSync(fileFor(out,url),'utf8');const graph=JSON.parse(html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/)[1])['@graph'];const article=graph.find(x=>x['@type']==='Article');assert.equal(article.datePublished,published);assert.equal(article.dateModified,modified);assert(html.includes('datetime="'+modified+'"'));
   }
+});
+
+test('home offers direct crawlable links to spread explanations and the card directory',t=>{
+  const out=release(t),home=fs.readFileSync(path.join(out,'index.html'),'utf8');
+  for(const route of ['/gunluk-tarot/','/uc-kart-tarot/','/ask-tarot/','/kariyer-tarot/','/karar-tarot/','/kelt-haci-tarot/','/tarot-kartlari/','/rehber/online-tarot-nasil-calisir/']){
+    assert.match(home,new RegExp('<a\\b[^>]*href="'+route+'"[^>]*>[^<]+</a>'),'missing descriptive anchor '+route);
+    assert(fs.existsSync(path.join(out,route,'index.html')),'missing destination '+route);
+  }
+});
+
+test('love and career question guides link both ways to their matching spread explanations',t=>{
+  const out=release(t);
+  for(const [spread,guide,id] of [['/ask-tarot/','/rehber/ask-tarot-sorulari/','relationship'],['/kariyer-tarot/','/rehber/kariyer-tarot-sorulari/','career']]){
+    const spreadHtml=fs.readFileSync(path.join(out,spread,'index.html'),'utf8'),guideHtml=fs.readFileSync(path.join(out,guide,'index.html'),'utf8');
+    assert.match(spreadHtml,new RegExp('<a\\b[^>]*href="'+guide+'"'),'spread points to wrong question guide');
+    assert.match(guideHtml,new RegExp('<a\\b[^>]*href="'+spread+'"'),'question guide lacks the matching explanation');
+    for(const html of [spreadHtml,guideHtml])assert(html.includes('data-reading-link="'+id+'" href="/?acilim='+id+'"'),'matching reading entry lost');
+  }
+});
+
+test('card directory connects meanings to interpretation and reversed-card guidance',t=>{
+  const out=release(t),html=fs.readFileSync(path.join(out,'tarot-kartlari/index.html'),'utf8');
+  for(const route of ['/rehber/tarot-kartlari-nasil-yorumlanir/','/rehber/ters-tarot-kartlari/'])assert.match(html,new RegExp('<a\\b[^>]*href="'+route+'"'),'missing interpretation route '+route);
 });
 test('brand logo and touch icon are public assets and article schema names a real matching image',t=>{
   const out=release(t);
