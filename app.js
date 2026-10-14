@@ -3351,6 +3351,7 @@ $$('[data-nav="home"]').forEach((link) => link.addEventListener('click', (event)
   }
   if (stage.dataset.view !== 'home') showHome();
   if (state.step !== 'intent') go('intent');
+  $('main').scrollTo(0, 0);
   window.scrollTo(0, 0);
 }));
 
